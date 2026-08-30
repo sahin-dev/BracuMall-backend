@@ -1,0 +1,549 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mongodb"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  buyer
+  seller
+  admin
+}
+
+enum StoreMode {
+  general
+  food
+  hybrid
+}
+
+enum ProductType {
+  general
+  food
+}
+
+enum ProductCondition {
+  new
+  like_new
+  good
+  fair
+}
+
+enum FulfillmentType {
+  pickup
+  delivery
+}
+
+enum ComplaintCategory {
+  item_quality
+  wrong_item
+  not_received
+  payment
+  seller_behavior
+  buyer_behavior
+  misleading_listing
+  counterfeit
+  other
+}
+
+enum ComplaintSeverity {
+  low
+  medium
+  high
+}
+
+enum PrivateUploadPurpose {
+  seller_document
+  payment_proof
+}
+
+model User {
+  id                  String              @id @default(auto()) @map("_id") @db.ObjectId
+  email               String              @unique
+  name                String
+  password            String
+  role                UserRole            @default(buyer)
+  isApproved          Boolean             @default(false)
+  isEmailVerified     Boolean?            @default(false)
+  emailVerifiedAt     DateTime?
+  emailOtpHash        String?
+  emailOtpExpiresAt   DateTime?
+  isSuspended         Boolean             @default(false)
+  phone               String?
+  whatsappNumber      String?
+  avatar              String?
+  studentId           String?
+  department          String?
+  preferredLocation   String?
+  emailOtpSentAt      DateTime?
+  emailOtpAttempts    Int                 @default(0)
+  failedLoginAttempts Int                 @default(0)
+  lockedUntil         DateTime?
+  createdAt           DateTime            @default(now())
+  updatedAt           DateTime            @updatedAt
+  sellerApplications  SellerApplication[]
+  orders              Order[]             @relation("BuyerOrders")
+  preOrders           PreOrder[]          @relation("BuyerPreOrders")
+  wishlistItems       Wishlist[]
+  storeFavorites      StoreFavorite[]
+  reviews             Review[]
+  donations           Donation[]
+}
+
+enum ApplicationStatus {
+  pending
+  more_info_requested
+  approved
+  rejected
+}
+
+model SellerApplication {
+  id                    String            @id @default(auto()) @map("_id") @db.ObjectId
+  userId                String            @db.ObjectId
+  user                  User              @relation(fields: [userId], references: [id])
+  legalName             String?
+  dateOfBirth           DateTime?
+  gender                String?
+  phoneNumber           String?
+  whatsappNumber        String?
+  studentId             String?
+  department            String?
+  nidNumber             String?
+  nidFrontUrl           String?
+  nidBackUrl            String?
+  studentIdUrl          String?
+  presentAddress        String?
+  permanentAddress      String?
+  documents             String[]
+  description           String?
+  sellingCategories     String[]          @default([])
+  status                ApplicationStatus @default(pending)
+  identityVerified      Boolean           @default(false)
+  studentStatusVerified Boolean           @default(false)
+  addressVerified       Boolean           @default(false)
+  contactVerified       Boolean           @default(false)
+  documentsVerified     Boolean           @default(false)
+  verificationNote      String?
+  adminNote             String?
+  reviewedBy            String?
+  reviewedAt            DateTime?
+  rejectionReason       String?
+  createdAt             DateTime          @default(now())
+}
+
+model Store {
+  id                String    @id @default(auto()) @map("_id") @db.ObjectId
+  ownerId           String    @unique @db.ObjectId
+  name              String
+  slug              String    @unique
+  description       String?
+  logoUrl           String?
+  bannerUrl         String?
+  mode              StoreMode @default(general)
+  sellingCategories String[]  @default([])
+  location          String?
+  isOpen            Boolean   @default(true)
+  acceptsPickup     Boolean   @default(true)
+  acceptsDelivery   Boolean   @default(false)
+  minimumOrder      Float?
+  deliveryFee       Float     @default(0)
+  prepTimeMin       Int?
+  prepTimeMax       Int?
+  openingHours      Json?
+  foodSafetyNote    String?
+  isActive          Boolean   @default(true)
+  ratingAvg         Float     @default(0)
+  ratingCount       Int       @default(0)
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  paymentMethods SellerPaymentMethod[]
+  favoritedBy    StoreFavorite[]
+}
+
+enum PaymentMethodType {
+  bkash
+  nagad
+  rocket
+  bank
+  cash
+  other
+}
+
+model SellerPaymentMethod {
+  id           String            @id @default(auto()) @map("_id") @db.ObjectId
+  storeId      String            @db.ObjectId
+  store        Store             @relation(fields: [storeId], references: [id])
+  label        String
+  type         PaymentMethodType
+  accountInfo  String
+  instructions String?
+  isActive     Boolean           @default(true)
+  createdAt    DateTime          @default(now())
+}
+
+model PlatformPaymentMethod {
+  id           String            @id @default(auto()) @map("_id") @db.ObjectId
+  label        String
+  type         PaymentMethodType
+  accountInfo  String
+  instructions String?
+  isActive     Boolean           @default(true)
+  createdAt    DateTime          @default(now())
+}
+
+model Cart {
+  id        String     @id @default(auto()) @map("_id") @db.ObjectId
+  userId    String     @unique @db.ObjectId
+  items     CartItem[]
+  updatedAt DateTime   @updatedAt
+  createdAt DateTime   @default(now())
+}
+
+model CartItem {
+  id           String   @id @default(auto()) @map("_id") @db.ObjectId
+  cartId       String   @db.ObjectId
+  cart         Cart     @relation(fields: [cartId], references: [id])
+  productId    String
+  sellerId     String
+  storeId      String
+  productName  String
+  productImage String?
+  price        Float
+  quantity     Int
+  addedAt      DateTime @default(now())
+}
+
+enum OrderStatus {
+  pending
+  confirmed
+  processing
+  ready
+  delivered
+  cancelled
+}
+
+enum PaymentStatus {
+  unpaid
+  pending_verification
+  paid
+  rejected
+}
+
+model Order {
+  id                 String               @id @default(auto()) @map("_id") @db.ObjectId
+  buyerId            String               @db.ObjectId
+  buyer              User                 @relation("BuyerOrders", fields: [buyerId], references: [id])
+  sellerId           String
+  storeId            String
+  status             OrderStatus          @default(pending)
+  paymentStatus      PaymentStatus        @default(unpaid)
+  total              Float
+  deliveryLocation   String
+  fulfillmentType    FulfillmentType      @default(pickup)
+  requestedFor       DateTime?
+  pickupCode         String?
+  cancellationReason String?
+  cancelledBy        String?
+  cancelledAt        DateTime?
+  inventoryRestored  Boolean              @default(false)
+  notes              String?
+  paymentMethod      String               @default("cod")
+  createdAt          DateTime             @default(now())
+  items              OrderItem[]
+  statusHistory      OrderStatusHistory[]
+  paymentSubmissions PaymentSubmission[]
+}
+
+model OrderItem {
+  id           String      @id @default(auto()) @map("_id") @db.ObjectId
+  orderId      String      @db.ObjectId
+  order        Order       @relation(fields: [orderId], references: [id])
+  productId    String
+  productName  String
+  price        Float
+  quantity     Int
+  productImage String?
+  productType  ProductType @default(general)
+}
+
+model OrderStatusHistory {
+  id        String      @id @default(auto()) @map("_id") @db.ObjectId
+  orderId   String      @db.ObjectId
+  order     Order       @relation(fields: [orderId], references: [id])
+  status    OrderStatus
+  note      String?
+  changedBy String
+  changedAt DateTime    @default(now())
+}
+
+enum PreOrderStatus {
+  pending
+  awaiting_payment
+  confirmed
+  fulfilled
+  cancelled
+}
+
+enum PreOrderPaymentType {
+  prepaid
+  postpaid
+}
+
+model PreOrder {
+  id            String              @id @default(auto()) @map("_id") @db.ObjectId
+  productId     String
+  sellerId      String
+  storeId       String
+  buyerId       String              @db.ObjectId
+  buyer         User                @relation("BuyerPreOrders", fields: [buyerId], references: [id])
+  quantity      Int
+  price         Float
+  totalAmount   Float
+  paymentType   PreOrderPaymentType @default(postpaid)
+  depositAmount Float?
+  deadline      DateTime?
+  status        PreOrderStatus      @default(pending)
+  createdAt     DateTime            @default(now())
+
+  paymentSubmissions PaymentSubmission[]
+}
+
+model Wishlist {
+  id           String   @id @default(auto()) @map("_id") @db.ObjectId
+  userId       String   @db.ObjectId
+  user         User     @relation(fields: [userId], references: [id])
+  productId    String
+  productName  String?
+  productImage String?
+  productPrice Float?
+  createdAt    DateTime @default(now())
+
+  @@unique([userId, productId])
+}
+
+model StoreFavorite {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  userId    String   @db.ObjectId
+  user      User     @relation(fields: [userId], references: [id])
+  storeId   String   @db.ObjectId
+  store     Store    @relation(fields: [storeId], references: [id])
+  createdAt DateTime @default(now())
+
+  @@unique([userId, storeId])
+}
+
+model Product {
+  id                    String               @id @default(auto()) @map("_id") @db.ObjectId
+  sellerId              String
+  storeId               String
+  name                  String
+  description           String
+  price                 Float
+  discount              Int                  @default(0)
+  images                String[]
+  categoryId            String?
+  categoryName          String?
+  productType           ProductType          @default(general)
+  condition             ProductCondition?
+  isNegotiable          Boolean              @default(false)
+  meetupLocation        String?
+  stock                 Int                  @default(0)
+  isPreOrder            Boolean              @default(false)
+  preOrderDeadline      DateTime?
+  preOrderPaymentType   PreOrderPaymentType? @default(postpaid)
+  preOrderDepositAmount Float?
+  preOrderLimit         Int?
+  menuId                String?
+  menuSection           String?
+  dietaryTags           String[]             @default([])
+  allergens             String[]             @default([])
+  ingredients           String?
+  foodOptions           Json?
+  availableDays         String[]             @default([])
+  availableFrom         String?
+  availableUntil        String?
+  prepTimeMinutes       Int?
+  isMadeToOrder         Boolean              @default(false)
+  soldOutToday          Boolean              @default(false)
+  isActive              Boolean              @default(true)
+  totalSold             Int                  @default(0)
+  ratingAvg             Float                @default(0)
+  ratingCount           Int                  @default(0)
+  createdAt             DateTime             @default(now())
+  updatedAt             DateTime             @updatedAt
+}
+
+model Menu {
+  id             String   @id @default(auto()) @map("_id") @db.ObjectId
+  storeId        String
+  title          String
+  description    String?
+  isAvailable    Boolean  @default(true)
+  autoSchedule   Boolean  @default(false)
+  availableDays  String[] @default([])
+  availableFrom  String?
+  availableUntil String?
+  sortOrder      Int      @default(0)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+}
+
+model Category {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  name      String   @unique
+  slug      String   @unique
+  image     String?
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+}
+
+model DeliveryLocation {
+  id          String   @id @default(auto()) @map("_id") @db.ObjectId
+  name        String
+  description String?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+}
+
+enum SubmissionStatus {
+  pending
+  verified
+  rejected
+}
+
+model PaymentSubmission {
+  id                      String           @id @default(auto()) @map("_id") @db.ObjectId
+  orderId                 String?          @db.ObjectId
+  order                   Order?           @relation(fields: [orderId], references: [id])
+  preOrderId              String?          @db.ObjectId
+  preOrder                PreOrder?        @relation(fields: [preOrderId], references: [id])
+  donationId              String?          @db.ObjectId
+  donation                Donation?        @relation(fields: [donationId], references: [id])
+  sellerPaymentMethodId   String?          @db.ObjectId
+  platformPaymentMethodId String?          @db.ObjectId
+  methodLabel             String
+  submittedBy             String
+  amount                  Float
+  transactionId           String
+  transactionKey          String?
+  paidAt                  DateTime
+  screenshotUrl           String
+  status                  SubmissionStatus @default(pending)
+  verifiedBy              String?
+  verifiedAt              DateTime?
+  rejectionReason         String?
+  createdAt               DateTime         @default(now())
+
+  @@index([transactionKey])
+}
+
+model Review {
+  id              String   @id @default(auto()) @map("_id") @db.ObjectId
+  productId       String
+  storeId         String
+  orderId         String
+  buyerId         String   @db.ObjectId
+  buyer           User     @relation(fields: [buyerId], references: [id])
+  rating          Int
+  tasteRating     Int?
+  qualityRating   Int?
+  valueRating     Int?
+  packagingRating Int?
+  serviceRating   Int?
+  comment         String?
+  createdAt       DateTime @default(now())
+
+  @@unique([orderId, productId])
+}
+
+model Donation {
+  id        String           @id @default(auto()) @map("_id") @db.ObjectId
+  donorId   String           @db.ObjectId
+  donor     User             @relation(fields: [donorId], references: [id])
+  amount    Float
+  message   String?
+  status    SubmissionStatus @default(pending)
+  createdAt DateTime         @default(now())
+
+  paymentSubmissions PaymentSubmission[]
+}
+
+model Conversation {
+  id            String   @id @default(auto()) @map("_id") @db.ObjectId
+  userAId       String   @db.ObjectId
+  userBId       String   @db.ObjectId
+  contextType   String?
+  contextId     String?
+  lastMessageAt DateTime @default(now())
+  createdAt     DateTime @default(now())
+
+  @@unique([userAId, userBId, contextType, contextId])
+}
+
+model Message {
+  id             String    @id @default(auto()) @map("_id") @db.ObjectId
+  conversationId String    @db.ObjectId
+  senderId       String    @db.ObjectId
+  content        String
+  createdAt      DateTime  @default(now())
+  readAt         DateTime?
+}
+
+model Notification {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  userId    String   @db.ObjectId
+  type      String
+  title     String
+  body      String?
+  link      String?
+  isRead    Boolean  @default(false)
+  createdAt DateTime @default(now())
+}
+
+enum ComplaintTargetType {
+  order
+  product
+  store
+  user
+}
+
+enum ComplaintStatus {
+  open
+  investigating
+  resolved
+  dismissed
+}
+
+model Complaint {
+  id            String              @id @default(auto()) @map("_id") @db.ObjectId
+  filedById     String              @db.ObjectId
+  againstUserId String              @db.ObjectId
+  targetType    ComplaintTargetType
+  targetId      String?
+  category      ComplaintCategory   @default(other)
+  severity      ComplaintSeverity   @default(low)
+  occurrenceAt  DateTime?
+  description   String
+  evidenceUrls  String[]
+  status        ComplaintStatus     @default(open)
+  resolution    String?
+  response      String?
+  assignedTo    String?
+  resolvedBy    String?
+  resolvedAt    DateTime?
+  createdAt     DateTime            @default(now())
+}
+
+model PrivateUpload {
+  id           String               @id @default(auto()) @map("_id") @db.ObjectId
+  ownerId      String               @db.ObjectId
+  purpose      PrivateUploadPurpose
+  storageKey   String
+  originalName String
+  mimeType     String
+  size         Int
+  createdAt    DateTime             @default(now())
+}
