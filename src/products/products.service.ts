@@ -1,10 +1,8 @@
-import {
-  BadRequestException,
-  Injectable,
-  ForbiddenException,
-} from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { StoresService } from '../stores/stores.service';
+import { assertOwnership } from '../common/utils/ownership.util';
+import { MAX_LIST_SIZE } from '../common/utils/pagination.util';
 
 @Injectable()
 export class ProductsService {
@@ -40,7 +38,13 @@ export class ProductsService {
   async findAll(query: any = {}) {
     const where: any = { isActive: true };
     if (query.search) {
-      where.OR = ['name', 'description', 'categoryName', 'menuSection', 'ingredients'].map((field) => ({
+      where.OR = [
+        'name',
+        'description',
+        'categoryName',
+        'menuSection',
+        'ingredients',
+      ].map((field) => ({
         [field]: { contains: query.search, mode: 'insensitive' },
       }));
     }
@@ -58,22 +62,38 @@ export class ProductsService {
     if (query.availableDay) where.availableDays = { has: query.availableDay };
     if (query.excludeSoldOut === 'true') where.soldOutToday = false;
     if (query.sellerId) where.sellerId = query.sellerId;
-    const allowedSortFields = new Set(['createdAt', 'price', 'ratingAvg', 'totalSold', 'name']);
-    const [requestedSortField, requestedSortDirection] = String(query.sort || 'createdAt:desc').split(':');
-    const sortField = allowedSortFields.has(requestedSortField) ? requestedSortField : 'createdAt';
-    const orderBy: any = { [sortField]: requestedSortDirection === 'asc' ? 'asc' : 'desc' };
+    const allowedSortFields = new Set([
+      'createdAt',
+      'price',
+      'ratingAvg',
+      'totalSold',
+      'name',
+    ]);
+    const [requestedSortField, requestedSortDirection] = String(
+      query.sort || 'createdAt:desc',
+    ).split(':');
+    const sortField = allowedSortFields.has(requestedSortField)
+      ? requestedSortField
+      : 'createdAt';
+    const orderBy: any = {
+      [sortField]: requestedSortDirection === 'asc' ? 'asc' : 'desc',
+    };
     const take = Math.min(Math.max(Number(query.limit) || 20, 1), 100);
     const skip = Math.max(Number(query.skip) || 0, 0);
     const [items, total] = await Promise.all([
       this.prisma.product.findMany({
-      where,
-      orderBy,
-      take,
-      skip,
-    }),
-      query.withMeta === 'true' ? this.prisma.product.count({ where }) : Promise.resolve(0),
+        where,
+        orderBy,
+        take,
+        skip,
+      }),
+      query.withMeta === 'true'
+        ? this.prisma.product.count({ where })
+        : Promise.resolve(0),
     ]);
-    return query.withMeta === 'true' ? { items, total, limit: take, skip } : items;
+    return query.withMeta === 'true'
+      ? { items, total, limit: take, skip }
+      : items;
   }
 
   findById(id: string) {
@@ -84,8 +104,7 @@ export class ProductsService {
     const product = await this.prisma.product.findUniqueOrThrow({
       where: { id },
     });
-    if (product.sellerId !== sellerId)
-      throw new ForbiddenException('Not your product');
+    assertOwnership(product.sellerId === sellerId, 'Not your product');
     if (dto.categoryId) {
       const category = await this.prisma.category.findUniqueOrThrow({
         where: { id: dto.categoryId },
@@ -93,7 +112,10 @@ export class ProductsService {
       dto.categoryName = category.name;
     }
     const store = await this.storesService.findByOwner(sellerId);
-    this.assertFoodStoreCompatibility(store.mode, dto.productType ?? product.productType);
+    this.assertFoodStoreCompatibility(
+      store.mode,
+      dto.productType ?? product.productType,
+    );
     this.assertCategoryAllowed(store, dto.categoryId ?? product.categoryId);
     const nextProductType = dto.productType ?? product.productType;
     if (nextProductType === 'food' && dto.menuId) {
@@ -114,8 +136,7 @@ export class ProductsService {
     const product = await this.prisma.product.findUniqueOrThrow({
       where: { id },
     });
-    if (product.sellerId !== sellerId)
-      throw new ForbiddenException('Not your product');
+    assertOwnership(product.sellerId === sellerId, 'Not your product');
     return this.prisma.product.update({
       where: { id },
       data: { isActive: false },
@@ -126,11 +147,15 @@ export class ProductsService {
     return this.prisma.product.findMany({
       where: { sellerId },
       orderBy: { createdAt: 'desc' },
+      take: MAX_LIST_SIZE,
     });
   }
 
   findAllAdmin() {
-    return this.prisma.product.findMany({ orderBy: { createdAt: 'desc' } });
+    return this.prisma.product.findMany({
+      orderBy: { createdAt: 'desc' },
+      take: MAX_LIST_SIZE,
+    });
   }
 
   async setActiveByAdmin(id: string, isActive: boolean) {
@@ -173,13 +198,21 @@ export class ProductsService {
     };
   }
 
-  private assertFoodStoreCompatibility(storeMode: string, productType?: string) {
+  private assertFoodStoreCompatibility(
+    storeMode: string,
+    productType?: string,
+  ) {
     if (productType === 'food' && storeMode === 'general') {
-      throw new BadRequestException('Enable food or hybrid mode in store settings before adding food products');
+      throw new BadRequestException(
+        'Enable food or hybrid mode in store settings before adding food products',
+      );
     }
   }
 
-  private assertCategoryAllowed(store: { sellingCategories: string[] }, categoryId?: string) {
+  private assertCategoryAllowed(
+    store: { sellingCategories: string[] },
+    categoryId?: string,
+  ) {
     if (!store.sellingCategories?.length) return;
     if (!categoryId || !store.sellingCategories.includes(categoryId)) {
       throw new BadRequestException(
@@ -189,7 +222,9 @@ export class ProductsService {
   }
 
   private async assertMenuOwnership(storeId: string, menuId: string) {
-    const menu = await this.prisma.menu.findUniqueOrThrow({ where: { id: menuId } });
+    const menu = await this.prisma.menu.findUniqueOrThrow({
+      where: { id: menuId },
+    });
     if (menu.storeId !== storeId) {
       throw new BadRequestException('This menu does not belong to your store');
     }
@@ -220,7 +255,8 @@ export class ProductsService {
       dietaryTags: dto.dietaryTags || [],
       allergens: dto.allergens || [],
       availableDays: dto.availableDays || [],
-      prepTimeMinutes: dto.prepTimeMinutes == null ? null : Number(dto.prepTimeMinutes),
+      prepTimeMinutes:
+        dto.prepTimeMinutes == null ? null : Number(dto.prepTimeMinutes),
       isMadeToOrder: Boolean(dto.isMadeToOrder),
       soldOutToday: Boolean(dto.soldOutToday),
     };

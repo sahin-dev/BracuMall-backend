@@ -131,6 +131,9 @@ model SellerApplication {
   reviewedAt            DateTime?
   rejectionReason       String?
   createdAt             DateTime          @default(now())
+
+  @@index([userId])
+  @@index([status])
 }
 
 model Store {
@@ -182,6 +185,8 @@ model SellerPaymentMethod {
   instructions String?
   isActive     Boolean           @default(true)
   createdAt    DateTime          @default(now())
+
+  @@index([storeId])
 }
 
 model PlatformPaymentMethod {
@@ -214,6 +219,8 @@ model CartItem {
   price        Float
   quantity     Int
   addedAt      DateTime @default(now())
+
+  @@index([cartId])
 }
 
 enum OrderStatus {
@@ -255,6 +262,11 @@ model Order {
   items              OrderItem[]
   statusHistory      OrderStatusHistory[]
   paymentSubmissions PaymentSubmission[]
+
+  @@index([buyerId])
+  @@index([sellerId])
+  @@index([storeId])
+  @@index([status])
 }
 
 model OrderItem {
@@ -267,6 +279,8 @@ model OrderItem {
   quantity     Int
   productImage String?
   productType  ProductType @default(general)
+
+  @@index([orderId])
 }
 
 model OrderStatusHistory {
@@ -277,6 +291,8 @@ model OrderStatusHistory {
   note      String?
   changedBy String
   changedAt DateTime    @default(now())
+
+  @@index([orderId])
 }
 
 enum PreOrderStatus {
@@ -309,6 +325,11 @@ model PreOrder {
   createdAt     DateTime            @default(now())
 
   paymentSubmissions PaymentSubmission[]
+
+  @@index([sellerId])
+  @@index([storeId])
+  @@index([buyerId])
+  @@index([status])
 }
 
 model Wishlist {
@@ -333,6 +354,7 @@ model StoreFavorite {
   createdAt DateTime @default(now())
 
   @@unique([userId, storeId])
+  @@index([storeId])
 }
 
 model Product {
@@ -374,6 +396,11 @@ model Product {
   ratingCount           Int                  @default(0)
   createdAt             DateTime             @default(now())
   updatedAt             DateTime             @updatedAt
+
+  @@index([sellerId])
+  @@index([storeId])
+  @@index([categoryId])
+  @@index([isActive])
 }
 
 model Menu {
@@ -389,6 +416,8 @@ model Menu {
   sortOrder      Int      @default(0)
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
+
+  @@index([storeId])
 }
 
 model Category {
@@ -438,6 +467,10 @@ model PaymentSubmission {
   createdAt               DateTime         @default(now())
 
   @@index([transactionKey])
+  @@index([orderId])
+  @@index([preOrderId])
+  @@index([donationId])
+  @@index([status])
 }
 
 model Review {
@@ -457,6 +490,8 @@ model Review {
   createdAt       DateTime @default(now())
 
   @@unique([orderId, productId])
+  @@index([productId])
+  @@index([storeId])
 }
 
 model Donation {
@@ -469,6 +504,9 @@ model Donation {
   createdAt DateTime         @default(now())
 
   paymentSubmissions PaymentSubmission[]
+
+  @@index([donorId])
+  @@index([status])
 }
 
 model Conversation {
@@ -481,6 +519,7 @@ model Conversation {
   createdAt     DateTime @default(now())
 
   @@unique([userAId, userBId, contextType, contextId])
+  @@index([userBId])
 }
 
 model Message {
@@ -490,6 +529,8 @@ model Message {
   content        String
   createdAt      DateTime  @default(now())
   readAt         DateTime?
+
+  @@index([conversationId])
 }
 
 model Notification {
@@ -501,6 +542,8 @@ model Notification {
   link      String?
   isRead    Boolean  @default(false)
   createdAt DateTime @default(now())
+
+  @@index([userId])
 }
 
 enum ComplaintTargetType {
@@ -535,6 +578,10 @@ model Complaint {
   resolvedBy    String?
   resolvedAt    DateTime?
   createdAt     DateTime            @default(now())
+
+  @@index([filedById])
+  @@index([againstUserId])
+  @@index([status])
 }
 
 model PrivateUpload {

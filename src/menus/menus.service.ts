@@ -1,11 +1,11 @@
 import {
   BadRequestException,
-  ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateMenuDto, UpdateMenuDto } from './dto/menu.dto';
+import { assertOwnership } from '../common/utils/ownership.util';
 
 @Injectable()
 export class MenusService {
@@ -58,7 +58,7 @@ export class MenusService {
     const store = await this.prisma.store.findUniqueOrThrow({
       where: { id: menu.storeId },
     });
-    if (store.ownerId !== ownerId) throw new ForbiddenException('Not your menu');
+    assertOwnership(store.ownerId === ownerId, 'Not your menu');
     return menu;
   }
 

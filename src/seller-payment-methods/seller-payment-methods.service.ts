@@ -1,9 +1,6 @@
-import {
-  ForbiddenException,
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { assertOwnership } from '../common/utils/ownership.util';
 
 @Injectable()
 export class SellerPaymentMethodsService {
@@ -52,8 +49,7 @@ export class SellerPaymentMethodsService {
     const store = await this.prisma.store.findUniqueOrThrow({
       where: { id: method.storeId },
     });
-    if (store.ownerId !== ownerId)
-      throw new ForbiddenException('Not your payment method');
+    assertOwnership(store.ownerId === ownerId, 'Not your payment method');
     return method;
   }
 

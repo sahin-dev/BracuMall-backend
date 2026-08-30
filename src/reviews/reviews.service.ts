@@ -1,10 +1,10 @@
 import {
   BadRequestException,
   ConflictException,
-  ForbiddenException,
   Injectable,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { assertOwnership } from '../common/utils/ownership.util';
 
 @Injectable()
 export class ReviewsService {
@@ -27,8 +27,7 @@ export class ReviewsService {
     const order = await this.prisma.order.findUniqueOrThrow({
       where: { id: dto.orderId },
     });
-    if (order.buyerId !== buyerId)
-      throw new ForbiddenException('Not your order');
+    assertOwnership(order.buyerId === buyerId, 'Not your order');
     if (order.status !== 'delivered')
       throw new BadRequestException('You can only review delivered orders');
 

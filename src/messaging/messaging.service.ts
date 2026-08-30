@@ -1,7 +1,12 @@
-import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { EventsGateway } from '../events/events.gateway';
+import { assertOwnership } from '../common/utils/ownership.util';
 
 @Injectable()
 export class MessagingService {
@@ -11,8 +16,14 @@ export class MessagingService {
     private events: EventsGateway,
   ) {}
 
-  async getOrCreate(userId: string, otherUserId: string, contextType?: string, contextId?: string) {
-    if (userId === otherUserId) throw new BadRequestException('Cannot message yourself');
+  async getOrCreate(
+    userId: string,
+    otherUserId: string,
+    contextType?: string,
+    contextId?: string,
+  ) {
+    if (userId === otherUserId)
+      throw new BadRequestException('Cannot message yourself');
     const [userAId, userBId] = [userId, otherUserId].sort();
     // contextType/contextId must be written as explicit null (not left unset) — Prisma's MongoDB
     // connector does not match `field: null` against a document where the field is genuinely
@@ -22,25 +33,40 @@ export class MessagingService {
     const normalizedContextType = contextType ?? null;
     const normalizedContextId = contextId ?? null;
     const existing = await this.prisma.conversation.findFirst({
-      where: { userAId, userBId, contextType: normalizedContextType, contextId: normalizedContextId },
+      where: {
+        userAId,
+        userBId,
+        contextType: normalizedContextType,
+        contextId: normalizedContextId,
+      },
     });
     if (existing) return existing;
     return this.prisma.conversation.create({
-      data: { userAId, userBId, contextType: normalizedContextType, contextId: normalizedContextId },
+      data: {
+        userAId,
+        userBId,
+        contextType: normalizedContextType,
+        contextId: normalizedContextId,
+      },
     });
   }
 
   async getOrCreateWithAdmin(userId: string) {
-    const admin = await this.prisma.user.findFirst({ where: { role: 'admin' } });
+    const admin = await this.prisma.user.findFirst({
+      where: { role: 'admin' },
+    });
     if (!admin) throw new NotFoundException('No admin available');
     return this.getOrCreate(userId, admin.id);
   }
 
   private async assertParticipant(conversationId: string, userId: string) {
-    const conversation = await this.prisma.conversation.findUniqueOrThrow({ where: { id: conversationId } });
-    if (conversation.userAId !== userId && conversation.userBId !== userId) {
-      throw new ForbiddenException('Not your conversation');
-    }
+    const conversation = await this.prisma.conversation.findUniqueOrThrow({
+      where: { id: conversationId },
+    });
+    assertOwnership(
+      conversation.userAId === userId || conversation.userBId === userId,
+      'Not your conversation',
+    );
     return conversation;
   }
 
@@ -49,8 +75,12 @@ export class MessagingService {
       where: { OR: [{ userAId: userId }, { userBId: userId }] },
       orderBy: { lastMessageAt: 'desc' },
     });
-    const otherIds = conversations.map((c) => (c.userAId === userId ? c.userBId : c.userAId));
-    const users = await this.prisma.user.findMany({ where: { id: { in: otherIds } } });
+    const otherIds = conversations.map((c) =>
+      c.userAId === userId ? c.userBId : c.userAId,
+    );
+    const users = await this.prisma.user.findMany({
+      where: { id: { in: otherIds } },
+    });
     const userMap = new Map(users.map((u) => [u.id, u]));
 
     return Promise.all(
@@ -61,12 +91,18 @@ export class MessagingService {
           orderBy: { createdAt: 'desc' },
         });
         const unreadCount = await this.prisma.message.count({
-          where: { conversationId: c.id, senderId: { not: userId }, readAt: null },
+          where: {
+            conversationId: c.id,
+            senderId: { not: userId },
+            readAt: null,
+          },
         });
         const other = userMap.get(otherId);
         return {
           ...c,
-          otherUser: other ? { id: other.id, name: other.name, role: other.role } : null,
+          otherUser: other
+            ? { id: other.id, name: other.name, role: other.role }
+            : null,
           lastMessage,
           unreadCount,
         };
@@ -76,7 +112,10 @@ export class MessagingService {
 
   async getMessages(conversationId: string, userId: string) {
     await this.assertParticipant(conversationId, userId);
-    return this.prisma.message.findMany({ where: { conversationId }, orderBy: { createdAt: 'asc' } });
+    return this.prisma.message.findMany({
+      where: { conversationId },
+      orderBy: { createdAt: 'asc' },
+    });
   }
 
   async sendMessage(conversationId: string, userId: string, content: string) {
@@ -84,9 +123,15 @@ export class MessagingService {
     const message = await this.prisma.message.create({
       data: { conversationId, senderId: userId, content, readAt: null },
     });
-    await this.prisma.conversation.update({ where: { id: conversationId }, data: { lastMessageAt: new Date() } });
+    await this.prisma.conversation.update({
+      where: { id: conversationId },
+      data: { lastMessageAt: new Date() },
+    });
 
-    const otherId = conversation.userAId === userId ? conversation.userBId : conversation.userAId;
+    const otherId =
+      conversation.userAId === userId
+        ? conversation.userBId
+        : conversation.userAId;
     const sender = await this.prisma.user.findUnique({ where: { id: userId } });
     await this.notifications.create(otherId, {
       type: 'new_message',

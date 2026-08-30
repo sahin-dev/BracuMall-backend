@@ -1,7 +1,13 @@
-import { BadRequestException, Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  Logger,
+  OnModuleInit,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../prisma/prisma.service';
+import { MAX_LIST_SIZE } from '../common/utils/pagination.util';
 
 @Injectable()
 export class UsersService implements OnModuleInit {
@@ -20,7 +26,9 @@ export class UsersService implements OnModuleInit {
       const email = this.config.get<string>('ADMIN_EMAIL');
       const password = this.config.get<string>('ADMIN_PASSWORD');
       if (!email || !password) {
-        this.logger.warn('No admin account exists. Set ADMIN_EMAIL and ADMIN_PASSWORD to create one.');
+        this.logger.warn(
+          'No admin account exists. Set ADMIN_EMAIL and ADMIN_PASSWORD to create one.',
+        );
         return;
       }
       const hash = await bcrypt.hash(password, 12);
@@ -56,7 +64,10 @@ export class UsersService implements OnModuleInit {
   }
 
   async findAll() {
-    const users = await this.prisma.user.findMany({ orderBy: { createdAt: 'desc' } });
+    const users = await this.prisma.user.findMany({
+      orderBy: { createdAt: 'desc' },
+      take: MAX_LIST_SIZE,
+    });
     return users.map((user) => this.withoutSecrets(user));
   }
   async findById(id: string) {
@@ -76,19 +87,26 @@ export class UsersService implements OnModuleInit {
     });
   }
 
-  async updateProfile(id: string, data: {
-    name?: string;
-    phone?: string;
-    avatar?: string;
-    studentId?: string;
-    department?: string;
-    preferredLocation?: string;
-  }) {
+  async updateProfile(
+    id: string,
+    data: {
+      name?: string;
+      phone?: string;
+      avatar?: string;
+      studentId?: string;
+      department?: string;
+      preferredLocation?: string;
+    },
+  ) {
     const updated = await this.prisma.user.update({ where: { id }, data });
     return this.withoutSecrets(updated);
   }
 
-  async changePassword(id: string, currentPassword: string, newPassword: string) {
+  async changePassword(
+    id: string,
+    currentPassword: string,
+    newPassword: string,
+  ) {
     const user = await this.prisma.user.findUniqueOrThrow({ where: { id } });
     const valid = await bcrypt.compare(currentPassword, user.password);
     if (!valid) throw new BadRequestException('Current password is incorrect');

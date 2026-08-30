@@ -1,12 +1,12 @@
-import {
-  BadRequestException,
-  ForbiddenException,
-  Injectable,
-} from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 import { randomInt } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
-import { campusDayAndTime, isItemAvailableNow } from '../common/utils/availability.util';
+import {
+  campusDayAndTime,
+  isItemAvailableNow,
+} from '../common/utils/availability.util';
+import { assertOwnership } from '../common/utils/ownership.util';
 import type { CartItem, Product, Store } from '@prisma/client';
 
 type CheckoutInput = {
@@ -47,7 +47,9 @@ export class CartService {
       where: { id: { in: items.map((item) => item.productId) } },
     });
     const stores = await this.prisma.store.findMany({
-      where: { id: { in: [...new Set(products.map((product) => product.storeId))] } },
+      where: {
+        id: { in: [...new Set(products.map((product) => product.storeId))] },
+      },
       select: {
         id: true,
         name: true,
@@ -62,7 +64,9 @@ export class CartService {
         prepTimeMax: true,
       },
     });
-    const productMap = new Map(products.map((product) => [product.id, product]));
+    const productMap = new Map(
+      products.map((product) => [product.id, product]),
+    );
     const hydratedItems = items.map((item) => {
       const product = productMap.get(item.productId);
       return {
@@ -131,7 +135,8 @@ export class CartService {
       ? await this.prisma.menu.findUnique({ where: { id: product.menuId } })
       : null;
     const availability = isItemAvailableNow(menu, product);
-    if (!availability.available) throw new BadRequestException(availability.reason);
+    if (!availability.available)
+      throw new BadRequestException(availability.reason);
   }
 
   private async assertOwnedItem(itemId: string, userId: string) {
@@ -141,8 +146,7 @@ export class CartService {
     const cart = await this.prisma.cart.findUniqueOrThrow({
       where: { id: item.cartId },
     });
-    if (cart.userId !== userId)
-      throw new ForbiddenException('Not your cart item');
+    assertOwnership(cart.userId === userId, 'Not your cart item');
     return item;
   }
 
@@ -188,7 +192,9 @@ export class CartService {
         'One or more products are no longer available',
       );
 
-    const productMap = new Map(products.map((product) => [product.id, product]));
+    const productMap = new Map(
+      products.map((product) => [product.id, product]),
+    );
     const validatedItems = items.map((cartItem) => {
       const product = productMap.get(cartItem.productId)!;
       if (!product.isActive || product.isPreOrder || product.soldOutToday)
@@ -216,7 +222,8 @@ export class CartService {
         'Scheduled fulfillment time must be in the future',
       );
     const fulfillmentAt = requestedFor ?? new Date();
-    const { day: fulfillmentDay, time: fulfillmentTime } = campusDayAndTime(fulfillmentAt);
+    const { day: fulfillmentDay, time: fulfillmentTime } =
+      campusDayAndTime(fulfillmentAt);
 
     const preparedGroups: PreparedOrderGroup[] = [];
     for (const [sellerId, sellerItems] of bySeller) {
@@ -234,28 +241,44 @@ export class CartService {
           `${store.name} is currently closed; choose a scheduled time`,
         );
       if (store.mode !== 'general') {
-        const hours = store.openingHours as Record<string, { enabled?: boolean; open?: string; close?: string }> | null;
+        const hours = store.openingHours as Record<
+          string,
+          { enabled?: boolean; open?: string; close?: string }
+        > | null;
         const dayHours = hours?.[fulfillmentDay];
-        if (dayHours && (!dayHours.enabled || (dayHours.open && fulfillmentTime < dayHours.open) || (dayHours.close && fulfillmentTime > dayHours.close))) {
-          throw new BadRequestException(`${store.name} is not serving at the selected time`);
+        if (
+          dayHours &&
+          (!dayHours.enabled ||
+            (dayHours.open && fulfillmentTime < dayHours.open) ||
+            (dayHours.close && fulfillmentTime > dayHours.close))
+        ) {
+          throw new BadRequestException(
+            `${store.name} is not serving at the selected time`,
+          );
         }
       }
 
-      const menuIds = [...new Set(sellerItems.map(({ product }) => product.menuId).filter(Boolean))] as string[];
+      const menuIds = [
+        ...new Set(
+          sellerItems.map(({ product }) => product.menuId).filter(Boolean),
+        ),
+      ] as string[];
       const menus = menuIds.length
         ? await this.prisma.menu.findMany({ where: { id: { in: menuIds } } })
         : [];
       const menuMap = new Map(menus.map((menu) => [menu.id, menu]));
       for (const { product } of sellerItems) {
         if (product.productType !== 'food') continue;
-        const menu = product.menuId ? menuMap.get(product.menuId) ?? null : null;
+        const menu = product.menuId
+          ? (menuMap.get(product.menuId) ?? null)
+          : null;
         const availability = isItemAvailableNow(menu, product, fulfillmentAt);
-        if (!availability.available) throw new BadRequestException(availability.reason);
+        if (!availability.available)
+          throw new BadRequestException(availability.reason);
       }
 
       const subtotal = sellerItems.reduce(
-        (sum, item) =>
-          sum + item.product.price * item.cartItem.quantity,
+        (sum, item) => sum + item.product.price * item.cartItem.quantity,
         0,
       );
       if (store.minimumOrder && subtotal < store.minimumOrder)
@@ -263,8 +286,7 @@ export class CartService {
           `${store.name} requires a minimum order of Tk ${store.minimumOrder}`,
         );
       const total =
-        subtotal +
-        (fulfillmentType === 'delivery' ? store.deliveryFee : 0);
+        subtotal + (fulfillmentType === 'delivery' ? store.deliveryFee : 0);
       preparedGroups.push({ sellerId, sellerItems, store, total });
     }
 

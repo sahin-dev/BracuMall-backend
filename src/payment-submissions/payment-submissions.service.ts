@@ -1,10 +1,7 @@
-import {
-  BadRequestException,
-  ForbiddenException,
-  Injectable,
-} from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { assertOwnership } from '../common/utils/ownership.util';
 
 type CreateDto = {
   orderId?: string;
@@ -45,12 +42,13 @@ export class PaymentSubmissionsService {
       const order = await this.prisma.order.findUniqueOrThrow({
         where: { id: dto.orderId },
       });
-      if (order.buyerId !== submittedBy)
-        throw new ForbiddenException('Not your order');
+      assertOwnership(order.buyerId === submittedBy, 'Not your order');
       if (['cancelled', 'delivered'].includes(order.status))
         throw new BadRequestException('This order is not accepting payments');
       if (!['unpaid', 'rejected'].includes(order.paymentStatus))
-        throw new BadRequestException('A payment is already being reviewed or has been verified');
+        throw new BadRequestException(
+          'A payment is already being reviewed or has been verified',
+        );
       if (!dto.sellerPaymentMethodId)
         throw new BadRequestException('sellerPaymentMethodId is required');
       const method = await this.prisma.sellerPaymentMethod.findUniqueOrThrow({
@@ -70,10 +68,11 @@ export class PaymentSubmissionsService {
       const preOrder = await this.prisma.preOrder.findUniqueOrThrow({
         where: { id: dto.preOrderId },
       });
-      if (preOrder.buyerId !== submittedBy)
-        throw new ForbiddenException('Not your pre-order');
+      assertOwnership(preOrder.buyerId === submittedBy, 'Not your pre-order');
       if (['cancelled', 'fulfilled'].includes(preOrder.status))
-        throw new BadRequestException('This pre-order is not accepting payments');
+        throw new BadRequestException(
+          'This pre-order is not accepting payments',
+        );
       if (!dto.sellerPaymentMethodId)
         throw new BadRequestException('sellerPaymentMethodId is required');
       const method = await this.prisma.sellerPaymentMethod.findUniqueOrThrow({
@@ -96,8 +95,7 @@ export class PaymentSubmissionsService {
       const donation = await this.prisma.donation.findUniqueOrThrow({
         where: { id: dto.donationId },
       });
-      if (donation.donorId !== submittedBy)
-        throw new ForbiddenException('Not your donation');
+      assertOwnership(donation.donorId === submittedBy, 'Not your donation');
       if (!dto.platformPaymentMethodId)
         throw new BadRequestException('platformPaymentMethodId is required');
       const method = await this.prisma.platformPaymentMethod.findUniqueOrThrow({
@@ -112,7 +110,9 @@ export class PaymentSubmissionsService {
     }
 
     if (Math.abs(dto.amount - expectedAmount) > 0.009) {
-      throw new BadRequestException(`Payment amount must be Tk ${expectedAmount}`);
+      throw new BadRequestException(
+        `Payment amount must be Tk ${expectedAmount}`,
+      );
     }
     const paidAt = new Date(dto.paidAt);
     if (paidAt.getTime() > Date.now() + 5 * 60 * 1000)
@@ -121,7 +121,9 @@ export class PaymentSubmissionsService {
       where: { transactionKey },
     });
     if (duplicate)
-      throw new BadRequestException('This transaction ID has already been submitted');
+      throw new BadRequestException(
+        'This transaction ID has already been submitted',
+      );
     const existingPending = await this.prisma.paymentSubmission.findFirst({
       where: {
         status: 'pending',
@@ -133,7 +135,9 @@ export class PaymentSubmissionsService {
       },
     });
     if (existingPending)
-      throw new BadRequestException('A payment proof is already awaiting review');
+      throw new BadRequestException(
+        'A payment proof is already awaiting review',
+      );
 
     const submission = await this.prisma.$transaction(async (tx) => {
       const created = await tx.paymentSubmission.create({
@@ -205,12 +209,12 @@ export class PaymentSubmissionsService {
       const order = await this.prisma.order.findUniqueOrThrow({
         where: { id: query.orderId },
       });
-      if (
-        role !== 'admin' &&
-        order.buyerId !== userId &&
-        order.sellerId !== userId
-      )
-        throw new ForbiddenException();
+      assertOwnership(
+        role === 'admin' ||
+          order.buyerId === userId ||
+          order.sellerId === userId,
+        'Not authorized to view these payment submissions',
+      );
       return this.prisma.paymentSubmission.findMany({
         where: { orderId: query.orderId },
         orderBy: { createdAt: 'desc' },
@@ -220,12 +224,12 @@ export class PaymentSubmissionsService {
       const preOrder = await this.prisma.preOrder.findUniqueOrThrow({
         where: { id: query.preOrderId },
       });
-      if (
-        role !== 'admin' &&
-        preOrder.buyerId !== userId &&
-        preOrder.sellerId !== userId
-      )
-        throw new ForbiddenException();
+      assertOwnership(
+        role === 'admin' ||
+          preOrder.buyerId === userId ||
+          preOrder.sellerId === userId,
+        'Not authorized to view these payment submissions',
+      );
       return this.prisma.paymentSubmission.findMany({
         where: { preOrderId: query.preOrderId },
         orderBy: { createdAt: 'desc' },
@@ -234,8 +238,10 @@ export class PaymentSubmissionsService {
     const donation = await this.prisma.donation.findUniqueOrThrow({
       where: { id: query.donationId },
     });
-    if (role !== 'admin' && donation.donorId !== userId)
-      throw new ForbiddenException();
+    assertOwnership(
+      role === 'admin' || donation.donorId === userId,
+      'Not authorized to view these payment submissions',
+    );
     return this.prisma.paymentSubmission.findMany({
       where: { donationId: query.donationId },
       orderBy: { createdAt: 'desc' },
@@ -258,8 +264,10 @@ export class PaymentSubmissionsService {
       const order = await this.prisma.order.findUniqueOrThrow({
         where: { id: submission.orderId },
       });
-      if (role !== 'admin' && order.sellerId !== verifierId)
-        throw new ForbiddenException();
+      assertOwnership(
+        role === 'admin' || order.sellerId === verifierId,
+        'Not authorized to verify this payment',
+      );
       if (dto.status === 'verified') {
         const nextStatus =
           order.status === 'pending' ? 'confirmed' : order.status;
@@ -285,8 +293,10 @@ export class PaymentSubmissionsService {
       const preOrder = await this.prisma.preOrder.findUniqueOrThrow({
         where: { id: submission.preOrderId },
       });
-      if (role !== 'admin' && preOrder.sellerId !== verifierId)
-        throw new ForbiddenException();
+      assertOwnership(
+        role === 'admin' || preOrder.sellerId === verifierId,
+        'Not authorized to verify this payment',
+      );
       if (dto.status === 'verified') {
         await this.prisma.preOrder.update({
           where: { id: preOrder.id },
@@ -299,8 +309,7 @@ export class PaymentSubmissionsService {
         });
       }
     } else if (submission.donationId) {
-      if (role !== 'admin')
-        throw new ForbiddenException('Only admin can verify donations');
+      assertOwnership(role === 'admin', 'Only admin can verify donations');
       await this.prisma.donation.update({
         where: { id: submission.donationId },
         data: { status: dto.status as any },
@@ -319,9 +328,14 @@ export class PaymentSubmissionsService {
 
     await this.notifications.create(submission.submittedBy, {
       type: dto.status === 'verified' ? 'payment_verified' : 'payment_rejected',
-      title: dto.status === 'verified' ? 'Payment verified' : 'Payment rejected',
+      title:
+        dto.status === 'verified' ? 'Payment verified' : 'Payment rejected',
       body: dto.rejectionReason,
-      link: submission.orderId ? '/buyer/orders' : submission.preOrderId ? '/buyer/pre-orders' : '/buyer/donate',
+      link: submission.orderId
+        ? '/buyer/orders'
+        : submission.preOrderId
+          ? '/buyer/pre-orders'
+          : '/buyer/donate',
     });
 
     return updated;

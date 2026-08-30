@@ -1,12 +1,13 @@
-import {
-  BadRequestException,
-  ForbiddenException,
-  Injectable,
-} from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 import { randomInt } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
-import { campusDayAndTime, isItemAvailableNow } from '../common/utils/availability.util';
+import {
+  campusDayAndTime,
+  isItemAvailableNow,
+} from '../common/utils/availability.util';
+import { assertOwnership } from '../common/utils/ownership.util';
+import { MAX_LIST_SIZE } from '../common/utils/pagination.util';
 
 export const ORDER_TRANSITIONS: Record<string, string[]> = {
   pending: ['confirmed', 'cancelled'],
@@ -49,7 +50,9 @@ export class OrdersService {
     });
     if (products.length !== productIds.length)
       throw new BadRequestException('One or more products were not found');
-    const productMap = new Map(products.map((product) => [product.id, product]));
+    const productMap = new Map(
+      products.map((product) => [product.id, product]),
+    );
     const authoritativeItems = dto.items.map((item) => {
       const product = productMap.get(item.productId)!;
       if (!product.isActive || product.isPreOrder || product.soldOutToday)
@@ -60,9 +63,13 @@ export class OrdersService {
         throw new BadRequestException(`Not enough stock for ${product.name}`);
       return { product, quantity: item.quantity };
     });
-    const sellerIds = new Set(authoritativeItems.map((item) => item.product.sellerId));
+    const sellerIds = new Set(
+      authoritativeItems.map((item) => item.product.sellerId),
+    );
     if (sellerIds.size !== 1)
-      throw new BadRequestException('A direct order may only contain items from one seller');
+      throw new BadRequestException(
+        'A direct order may only contain items from one seller',
+      );
 
     const store = await this.prisma.store.findUniqueOrThrow({
       where: { id: authoritativeItems[0].product.storeId },
@@ -76,44 +83,75 @@ export class OrdersService {
       throw new BadRequestException('This store does not offer delivery');
     const requestedFor = dto.requestedFor ? new Date(dto.requestedFor) : null;
     if (requestedFor && requestedFor.getTime() < Date.now())
-      throw new BadRequestException('Scheduled fulfillment time must be in the future');
+      throw new BadRequestException(
+        'Scheduled fulfillment time must be in the future',
+      );
     if (store.mode !== 'general' && !store.isOpen && !requestedFor)
-      throw new BadRequestException('This store is currently closed; choose a scheduled time');
+      throw new BadRequestException(
+        'This store is currently closed; choose a scheduled time',
+      );
     const fulfillmentAt = requestedFor ?? new Date();
-    const { day: fulfillmentDay, time: fulfillmentTime } = campusDayAndTime(fulfillmentAt);
+    const { day: fulfillmentDay, time: fulfillmentTime } =
+      campusDayAndTime(fulfillmentAt);
     if (store.mode !== 'general') {
-      const hours = store.openingHours as Record<string, { enabled?: boolean; open?: string; close?: string }> | null;
+      const hours = store.openingHours as Record<
+        string,
+        { enabled?: boolean; open?: string; close?: string }
+      > | null;
       const dayHours = hours?.[fulfillmentDay];
-      if (dayHours && (!dayHours.enabled || (dayHours.open && fulfillmentTime < dayHours.open) || (dayHours.close && fulfillmentTime > dayHours.close)))
-        throw new BadRequestException('This store is not serving at the selected time');
+      if (
+        dayHours &&
+        (!dayHours.enabled ||
+          (dayHours.open && fulfillmentTime < dayHours.open) ||
+          (dayHours.close && fulfillmentTime > dayHours.close))
+      )
+        throw new BadRequestException(
+          'This store is not serving at the selected time',
+        );
     }
-    const menuIds = [...new Set(authoritativeItems.map(({ product }) => product.menuId).filter(Boolean))] as string[];
+    const menuIds = [
+      ...new Set(
+        authoritativeItems.map(({ product }) => product.menuId).filter(Boolean),
+      ),
+    ] as string[];
     const menus = menuIds.length
       ? await this.prisma.menu.findMany({ where: { id: { in: menuIds } } })
       : [];
     const menuMap = new Map(menus.map((menu) => [menu.id, menu]));
     for (const { product } of authoritativeItems) {
       if (product.productType !== 'food') continue;
-      const menu = product.menuId ? menuMap.get(product.menuId) ?? null : null;
+      const menu = product.menuId
+        ? (menuMap.get(product.menuId) ?? null)
+        : null;
       const availability = isItemAvailableNow(menu, product, fulfillmentAt);
-      if (!availability.available) throw new BadRequestException(availability.reason);
+      if (!availability.available)
+        throw new BadRequestException(availability.reason);
     }
     const subtotal = authoritativeItems.reduce(
       (sum, item) => sum + item.product.price * item.quantity,
       0,
     );
     if (store.minimumOrder && subtotal < store.minimumOrder)
-      throw new BadRequestException(`Minimum order is Tk ${store.minimumOrder}`);
-    const total = subtotal + (fulfillmentType === 'delivery' ? store.deliveryFee : 0);
+      throw new BadRequestException(
+        `Minimum order is Tk ${store.minimumOrder}`,
+      );
+    const total =
+      subtotal + (fulfillmentType === 'delivery' ? store.deliveryFee : 0);
 
     const order = await this.prisma.$transaction(async (tx) => {
       for (const item of authoritativeItems) {
         const reserved = await tx.product.updateMany({
-          where: { id: item.product.id, isActive: true, stock: { gte: item.quantity } },
+          where: {
+            id: item.product.id,
+            isActive: true,
+            stock: { gte: item.quantity },
+          },
           data: { stock: { decrement: item.quantity } },
         });
         if (reserved.count !== 1)
-          throw new BadRequestException(`${item.product.name} no longer has enough stock`);
+          throw new BadRequestException(
+            `${item.product.name} no longer has enough stock`,
+          );
       }
       return tx.order.create({
         data: {
@@ -124,7 +162,10 @@ export class OrdersService {
           deliveryLocation: dto.deliveryLocation,
           fulfillmentType,
           requestedFor,
-          pickupCode: fulfillmentType === 'pickup' ? randomInt(100000, 1000000).toString() : null,
+          pickupCode:
+            fulfillmentType === 'pickup'
+              ? randomInt(100000, 1000000).toString()
+              : null,
           notes: dto.notes,
           items: {
             create: authoritativeItems.map(({ product, quantity }) => ({
@@ -156,8 +197,10 @@ export class OrdersService {
     userId: string,
     role: string,
   ) {
-    if (role !== 'admin' && order.buyerId !== userId && order.sellerId !== userId)
-      throw new ForbiddenException('Not your order');
+    assertOwnership(
+      role === 'admin' || order.buyerId === userId || order.sellerId === userId,
+      'Not your order',
+    );
   }
 
   async findById(id: string, userId: string, role: string) {
@@ -174,6 +217,7 @@ export class OrdersService {
       where: { buyerId },
       include: { items: true },
       orderBy: { createdAt: 'desc' },
+      take: MAX_LIST_SIZE,
     });
     const reviews = await this.prisma.review.findMany({
       where: { buyerId, orderId: { in: orders.map((order) => order.id) } },
@@ -190,6 +234,7 @@ export class OrdersService {
       where: { sellerId },
       include: { items: true, buyer: { select: orderBuyerSelect } },
       orderBy: { createdAt: 'desc' },
+      take: MAX_LIST_SIZE,
     });
   }
 
@@ -197,6 +242,7 @@ export class OrdersService {
     return this.prisma.order.findMany({
       include: { items: true, buyer: { select: orderBuyerSelect } },
       orderBy: { createdAt: 'desc' },
+      take: MAX_LIST_SIZE,
     });
   }
 
@@ -210,8 +256,7 @@ export class OrdersService {
       where: { id },
       include: { items: true },
     });
-    if (!isAdmin && order.sellerId !== userId)
-      throw new ForbiddenException('Not your order');
+    assertOwnership(isAdmin || order.sellerId === userId, 'Not your order');
     if (!ORDER_TRANSITIONS[order.status]?.includes(dto.status))
       throw new BadRequestException(
         `Order cannot move from ${order.status} to ${dto.status}`,
@@ -242,7 +287,8 @@ export class OrdersService {
           inventoryRestored:
             dto.status === 'cancelled' ? true : order.inventoryRestored,
           cancelledBy: dto.status === 'cancelled' ? userId : undefined,
-          cancellationReason: dto.status === 'cancelled' ? dto.notes : undefined,
+          cancellationReason:
+            dto.status === 'cancelled' ? dto.notes : undefined,
           cancelledAt: dto.status === 'cancelled' ? new Date() : undefined,
         },
       });
@@ -267,10 +313,11 @@ export class OrdersService {
 
   async cancelByBuyer(id: string, buyerId: string, reason?: string) {
     const order = await this.prisma.order.findUniqueOrThrow({ where: { id } });
-    if (order.buyerId !== buyerId)
-      throw new ForbiddenException('Not your order');
+    assertOwnership(order.buyerId === buyerId, 'Not your order');
     if (order.status !== 'pending')
-      throw new BadRequestException('Only pending orders can be cancelled by the buyer');
+      throw new BadRequestException(
+        'Only pending orders can be cancelled by the buyer',
+      );
     const updated = await this.updateStatus(
       id,
       { status: 'cancelled', notes: reason || 'Cancelled by buyer' },

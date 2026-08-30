@@ -1,10 +1,8 @@
-import {
-  BadRequestException,
-  ForbiddenException,
-  Injectable,
-} from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { assertOwnership } from '../common/utils/ownership.util';
+import { MAX_LIST_SIZE } from '../common/utils/pagination.util';
 
 export const PRE_ORDER_TRANSITIONS: Record<string, string[]> = {
   pending: ['awaiting_payment', 'confirmed', 'cancelled'],
@@ -66,8 +64,13 @@ export class PreOrdersService {
         },
         _sum: { quantity: true },
       });
-      if ((reserved._sum.quantity || 0) + dto.quantity > product.preOrderLimit) {
-        throw new BadRequestException('This pre-order has reached its reservation limit');
+      if (
+        (reserved._sum.quantity || 0) + dto.quantity >
+        product.preOrderLimit
+      ) {
+        throw new BadRequestException(
+          'This pre-order has reached its reservation limit',
+        );
       }
     }
     const preOrder = await this.prisma.preOrder.create({
@@ -98,13 +101,12 @@ export class PreOrdersService {
       where: { id },
       include: { buyer: { select: preOrderBuyerSelect } },
     });
-    if (
-      role !== 'admin' &&
-      preOrder.buyerId !== userId &&
-      preOrder.sellerId !== userId
-    ) {
-      throw new ForbiddenException('Not your pre-order');
-    }
+    assertOwnership(
+      role === 'admin' ||
+        preOrder.buyerId === userId ||
+        preOrder.sellerId === userId,
+      'Not your pre-order',
+    );
     return preOrder;
   }
 
@@ -112,6 +114,7 @@ export class PreOrdersService {
     return this.prisma.preOrder.findMany({
       where: { buyerId },
       orderBy: { createdAt: 'desc' },
+      take: MAX_LIST_SIZE,
     });
   }
 
@@ -119,11 +122,11 @@ export class PreOrdersService {
     const product = await this.prisma.product.findUniqueOrThrow({
       where: { id: productId },
     });
-    if (!isAdmin && product.sellerId !== userId)
-      throw new ForbiddenException('Not your product');
+    assertOwnership(isAdmin || product.sellerId === userId, 'Not your product');
     return this.prisma.preOrder.findMany({
       where: { productId },
       orderBy: { createdAt: 'desc' },
+      take: MAX_LIST_SIZE,
     });
   }
 
@@ -132,6 +135,7 @@ export class PreOrdersService {
       where: { sellerId },
       include: { buyer: { select: preOrderBuyerSelect } },
       orderBy: { createdAt: 'desc' },
+      take: MAX_LIST_SIZE,
     });
   }
 
@@ -144,8 +148,10 @@ export class PreOrdersService {
     const preOrder = await this.prisma.preOrder.findUniqueOrThrow({
       where: { id },
     });
-    if (!isAdmin && preOrder.sellerId !== userId)
-      throw new ForbiddenException('Not your pre-order');
+    assertOwnership(
+      isAdmin || preOrder.sellerId === userId,
+      'Not your pre-order',
+    );
     if (!PRE_ORDER_TRANSITIONS[preOrder.status]?.includes(status)) {
       throw new BadRequestException(
         `Pre-order cannot move from ${preOrder.status} to ${status}`,
@@ -170,11 +176,14 @@ export class PreOrdersService {
   }
 
   async cancelByBuyer(id: string, buyerId: string) {
-    const preOrder = await this.prisma.preOrder.findUniqueOrThrow({ where: { id } });
-    if (preOrder.buyerId !== buyerId)
-      throw new ForbiddenException('Not your pre-order');
+    const preOrder = await this.prisma.preOrder.findUniqueOrThrow({
+      where: { id },
+    });
+    assertOwnership(preOrder.buyerId === buyerId, 'Not your pre-order');
     if (!['pending', 'awaiting_payment'].includes(preOrder.status))
-      throw new BadRequestException('This pre-order can no longer be cancelled');
+      throw new BadRequestException(
+        'This pre-order can no longer be cancelled',
+      );
     const updated = await this.prisma.preOrder.update({
       where: { id },
       data: { status: 'cancelled' },
@@ -191,6 +200,7 @@ export class PreOrdersService {
     return this.prisma.preOrder.findMany({
       include: { buyer: { select: preOrderBuyerSelect } },
       orderBy: { createdAt: 'desc' },
+      take: MAX_LIST_SIZE,
     });
   }
 }

@@ -1,9 +1,7 @@
-import {
-  ForbiddenException,
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { assertOwnership } from '../common/utils/ownership.util';
+import { MAX_LIST_SIZE } from '../common/utils/pagination.util';
 
 @Injectable()
 export class StoresService {
@@ -24,22 +22,32 @@ export class StoresService {
     return slug;
   }
 
-  async createForOwner(ownerId: string, name: string, sellingCategories: string[] = []) {
+  async createForOwner(
+    ownerId: string,
+    name: string,
+    sellingCategories: string[] = [],
+  ) {
     const existing = await this.prisma.store.findUnique({ where: { ownerId } });
     if (existing) return existing;
     const slug = await this.generateSlug(name);
-    return this.prisma.store.create({ data: { ownerId, name, slug, sellingCategories } });
+    return this.prisma.store.create({
+      data: { ownerId, name, slug, sellingCategories },
+    });
   }
 
   findAllActive() {
     return this.prisma.store.findMany({
       where: { isActive: true },
       orderBy: { createdAt: 'desc' },
+      take: MAX_LIST_SIZE,
     });
   }
 
   findAllAdmin() {
-    return this.prisma.store.findMany({ orderBy: { createdAt: 'desc' } });
+    return this.prisma.store.findMany({
+      orderBy: { createdAt: 'desc' },
+      take: MAX_LIST_SIZE,
+    });
   }
 
   findBySlug(slug: string) {
@@ -92,8 +100,7 @@ export class StoresService {
     const store = await this.prisma.store.findUniqueOrThrow({
       where: { id: storeId },
     });
-    if (store.ownerId !== ownerId)
-      throw new ForbiddenException('Not your store');
+    assertOwnership(store.ownerId === ownerId, 'Not your store');
     return store;
   }
 }

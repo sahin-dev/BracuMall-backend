@@ -9,6 +9,8 @@ import { StoresService } from '../stores/stores.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { CreateApplicationDto } from './dto/create-application.dto';
 import { ReviewApplicationDto } from './dto/review-application.dto';
+import { assertOwnership } from '../common/utils/ownership.util';
+import { MAX_LIST_SIZE } from '../common/utils/pagination.util';
 
 const applicationUserSelect = {
   id: true,
@@ -36,7 +38,9 @@ export class SellerApplicationsService {
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user) throw new NotFoundException('User not found');
     if (user.role === 'admin') {
-      throw new ForbiddenException('Administrator accounts cannot become sellers');
+      throw new ForbiddenException(
+        'Administrator accounts cannot become sellers',
+      );
     }
 
     const existing = await this.prisma.sellerApplication.findFirst({
@@ -77,6 +81,7 @@ export class SellerApplicationsService {
       where,
       include: { user: { select: applicationUserSelect } },
       orderBy: { createdAt: 'desc' },
+      take: MAX_LIST_SIZE,
     });
   }
 
@@ -99,8 +104,13 @@ export class SellerApplicationsService {
       where: { id },
     });
     if (!application) throw new NotFoundException('Application not found');
-    if (application.status === 'approved' || application.status === 'rejected') {
-      throw new BadRequestException('This application has already been reviewed');
+    if (
+      application.status === 'approved' ||
+      application.status === 'rejected'
+    ) {
+      throw new BadRequestException(
+        'This application has already been reviewed',
+      );
     }
     if (dto.status === 'approved' && application.status !== 'pending') {
       throw new BadRequestException(
@@ -219,9 +229,7 @@ export class SellerApplicationsService {
       where: { id },
     });
     if (!application) throw new NotFoundException('Application not found');
-    if (application.userId !== userId) {
-      throw new ForbiddenException('Not your application');
-    }
+    assertOwnership(application.userId === userId, 'Not your application');
     if (application.status !== 'more_info_requested') {
       throw new BadRequestException(
         'This application is not awaiting more information',
