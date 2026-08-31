@@ -21,7 +21,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { Throttle } from '@nestjs/throttler';
 
-const IMAGE_FOLDERS = ['products', 'stores', 'avatars', 'payments'];
+const IMAGE_FOLDERS = ['products', 'stores', 'avatars', 'payments', 'hero', 'reviews'];
 const MAX_IMAGE_SIZE = 5 * 1024 * 1024;
 const MAX_DOCUMENT_SIZE = 10 * 1024 * 1024;
 
