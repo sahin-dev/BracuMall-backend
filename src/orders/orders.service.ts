@@ -261,6 +261,13 @@ export class OrdersService {
       throw new BadRequestException(
         `Order cannot move from ${order.status} to ${dto.status}`,
       );
+    if (
+      dto.status === 'cancelled' &&
+      order.paymentStatus === 'pending_verification'
+    )
+      throw new BadRequestException(
+        'Review the submitted payment proof before cancelling this order.',
+      );
 
     const updated = await this.prisma.$transaction(async (tx) => {
       if (dto.status === 'cancelled' && !order.inventoryRestored) {
@@ -317,6 +324,14 @@ export class OrdersService {
     if (order.status !== 'pending')
       throw new BadRequestException(
         'Only pending orders can be cancelled by the buyer',
+      );
+    if (order.paymentStatus === 'pending_verification')
+      throw new BadRequestException(
+        'Your payment proof must be reviewed before this order can be cancelled. Contact the seller for help.',
+      );
+    if (order.paymentStatus === 'paid')
+      throw new BadRequestException(
+        'Paid orders require seller-assisted cancellation and refund handling.',
       );
     const updated = await this.updateStatus(
       id,

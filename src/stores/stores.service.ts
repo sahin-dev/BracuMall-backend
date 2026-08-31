@@ -35,12 +35,42 @@ export class StoresService {
     });
   }
 
-  findAllActive() {
-    return this.prisma.store.findMany({
-      where: { isActive: true },
-      orderBy: { createdAt: 'desc' },
-      take: MAX_LIST_SIZE,
-    });
+  async findAllActive(query: any = {}) {
+    const where: any = { isActive: true };
+    if (query.search) {
+      where.OR = ['name', 'description', 'location'].map((field) => ({
+        [field]: { contains: query.search, mode: 'insensitive' },
+      }));
+    }
+    const allowedSortFields = new Set(['createdAt', 'name', 'ratingAvg', 'ratingCount']);
+    const [requestedField, requestedDirection] = String(query.sort || 'createdAt:desc').split(':');
+    const sortField = allowedSortFields.has(requestedField) ? requestedField : 'createdAt';
+    const take = Math.min(Math.max(Number(query.limit) || MAX_LIST_SIZE, 1), MAX_LIST_SIZE);
+    const skip = Math.max(Number(query.skip) || 0, 0);
+    const [items, total] = await Promise.all([
+      this.prisma.store.findMany({
+        where,
+        orderBy: { [sortField]: requestedDirection === 'asc' ? 'asc' : 'desc' },
+        take,
+        skip,
+      }),
+      query.withMeta === 'true' ? this.prisma.store.count({ where }) : Promise.resolve(0),
+    ]);
+
+    let enrichedItems: Array<(typeof items)[number] & { productCount?: number }> = items;
+    if (query.withCounts === 'true' && items.length > 0) {
+      const counts = await this.prisma.product.groupBy({
+        by: ['storeId'],
+        where: { isActive: true, storeId: { in: items.map((store) => store.id) } },
+        _count: { _all: true },
+      });
+      const countByStore = new Map(counts.map((entry) => [entry.storeId, entry._count._all]));
+      enrichedItems = items.map((store) => ({ ...store, productCount: countByStore.get(store.id) || 0 }));
+    }
+
+    return query.withMeta === 'true'
+      ? { items: enrichedItems, total, limit: take, skip }
+      : enrichedItems;
   }
 
   findAllAdmin() {

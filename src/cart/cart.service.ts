@@ -7,6 +7,7 @@ import {
   isItemAvailableNow,
 } from '../common/utils/availability.util';
 import { assertOwnership } from '../common/utils/ownership.util';
+import { CouponsService } from '../coupons/coupons.service';
 import type { CartItem, Product, Store } from '@prisma/client';
 
 type CheckoutInput = {
@@ -14,6 +15,7 @@ type CheckoutInput = {
   notes?: string;
   fulfillmentType?: 'pickup' | 'delivery';
   requestedFor?: string;
+  couponCode?: string;
 };
 
 type ValidatedCartItem = { cartItem: CartItem; product: Product };
@@ -22,6 +24,9 @@ type PreparedOrderGroup = {
   sellerItems: ValidatedCartItem[];
   store: Store;
   total: number;
+  couponId?: string;
+  couponCode?: string;
+  discountAmount: number;
 };
 
 @Injectable()
@@ -29,6 +34,7 @@ export class CartService {
   constructor(
     private prisma: PrismaService,
     private notifications: NotificationsService,
+    private coupons: CouponsService,
   ) {}
 
   private async getOrCreateCart(userId: string) {
@@ -287,7 +293,37 @@ export class CartService {
         );
       const total =
         subtotal + (fulfillmentType === 'delivery' ? store.deliveryFee : 0);
-      preparedGroups.push({ sellerId, sellerItems, store, total });
+      preparedGroups.push({ sellerId, sellerItems, store, total, discountAmount: 0 });
+    }
+
+    const normalizedCode = dto.couponCode?.trim().toUpperCase();
+    if (normalizedCode) {
+      const matchingCoupon = await this.prisma.coupon.findFirst({
+        where: {
+          code: normalizedCode,
+          storeId: { in: preparedGroups.map((group) => group.store.id) },
+        },
+      });
+      if (!matchingCoupon)
+        throw new BadRequestException(
+          'This coupon code is not valid for any store in your cart',
+        );
+      const group = preparedGroups.find(
+        (candidate) => candidate.store.id === matchingCoupon.storeId,
+      )!;
+      const subtotalForGroup = group.sellerItems.reduce(
+        (sum, item) => sum + item.product.price * item.cartItem.quantity,
+        0,
+      );
+      const { discountAmount } = await this.coupons.findRedeemable(
+        group.store.id,
+        normalizedCode,
+        subtotalForGroup,
+      );
+      group.couponId = matchingCoupon.id;
+      group.couponCode = normalizedCode;
+      group.discountAmount = discountAmount;
+      group.total = Math.max(0, group.total - discountAmount);
     }
 
     const orders = await this.prisma.$transaction(async (tx) => {
@@ -308,12 +344,31 @@ export class CartService {
             );
         }
 
+        if (group.couponId) {
+          const coupon = await tx.coupon.findUniqueOrThrow({ where: { id: group.couponId } });
+          const reservedCoupon = await tx.coupon.updateMany({
+            where: {
+              id: group.couponId,
+              ...(coupon.maxRedemptions != null
+                ? { redemptionCount: { lt: coupon.maxRedemptions } }
+                : {}),
+            },
+            data: { redemptionCount: { increment: 1 } },
+          });
+          if (reservedCoupon.count !== 1)
+            throw new BadRequestException(
+              `Coupon ${group.couponCode} just reached its redemption limit`,
+            );
+        }
+
         const order = await tx.order.create({
           data: {
             buyerId: userId,
             sellerId: group.sellerId,
             storeId: group.store.id,
             total: group.total,
+            couponCode: group.couponCode,
+            discountAmount: group.discountAmount,
             deliveryLocation: dto.deliveryLocation,
             fulfillmentType,
             requestedFor,

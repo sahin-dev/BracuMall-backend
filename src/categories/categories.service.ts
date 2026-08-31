@@ -9,11 +9,20 @@ export class CategoriesService {
     return this.prisma.category.create({ data: dto });
   }
 
-  findAll() {
-    return this.prisma.category.findMany({
+  async findAll(query: any = {}) {
+    const categories = await this.prisma.category.findMany({
       where: { isActive: true },
       orderBy: { name: 'asc' },
     });
+    if (query.withCounts !== 'true' || categories.length === 0) return categories;
+
+    const counts = await this.prisma.product.groupBy({
+      by: ['categoryId'],
+      where: { isActive: true, categoryId: { in: categories.map((category) => category.id) } },
+      _count: { _all: true },
+    });
+    const countByCategory = new Map(counts.map((entry) => [entry.categoryId, entry._count._all]));
+    return categories.map((category) => ({ ...category, productCount: countByCategory.get(category.id) || 0 }));
   }
 
   findAllAdmin() {

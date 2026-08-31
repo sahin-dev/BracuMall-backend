@@ -37,4 +37,89 @@ describe('PaymentSubmissionsService', () => {
     await expect(service.create(baseDto, 'buyer-1')).rejects.toThrow('already been submitted');
     expect(prisma.$transaction).not.toHaveBeenCalled();
   });
+
+  it('does not accept payment proof for a cancelled order', async () => {
+    const prisma = makePrisma();
+    prisma.order.findUniqueOrThrow.mockResolvedValueOnce({
+      id: 'order-1',
+      buyerId: 'buyer-1',
+      sellerId: 'seller-1',
+      storeId: 'store-1',
+      total: 500,
+      status: 'cancelled',
+      paymentStatus: 'unpaid',
+    } as any);
+    const service = new PaymentSubmissionsService(
+      prisma as any,
+      notifications as any,
+    );
+
+    await expect(service.create(baseDto, 'buyer-1')).rejects.toThrow(
+      'not accepting payments',
+    );
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+
+  it('rechecks order eligibility inside the transaction', async () => {
+    const prisma = makePrisma();
+    const tx = {
+      order: { updateMany: jest.fn().mockResolvedValue({ count: 0 }) },
+      preOrder: { updateMany: jest.fn() },
+      paymentSubmission: { create: jest.fn() },
+    };
+    prisma.$transaction.mockImplementationOnce((callback: any) => callback(tx));
+    const service = new PaymentSubmissionsService(
+      prisma as any,
+      notifications as any,
+    );
+
+    await expect(service.create(baseDto, 'buyer-1')).rejects.toThrow(
+      'no longer accepting payment proof',
+    );
+    expect(tx.paymentSubmission.create).not.toHaveBeenCalled();
+  });
+
+  it('reviewing a cancelled pre-order proof does not reopen the pre-order', async () => {
+    const prisma = {
+      paymentSubmission: {
+        findUniqueOrThrow: jest.fn().mockResolvedValue({
+          id: 'proof-1',
+          status: 'pending',
+          preOrderId: 'pre-order-1',
+          submittedBy: 'buyer-1',
+        }),
+        update: jest.fn().mockResolvedValue({
+          id: 'proof-1',
+          status: 'verified',
+        }),
+      },
+      preOrder: {
+        findUniqueOrThrow: jest.fn().mockResolvedValue({
+          id: 'pre-order-1',
+          sellerId: 'seller-1',
+          status: 'cancelled',
+        }),
+        update: jest.fn(),
+      },
+    };
+    const service = new PaymentSubmissionsService(
+      prisma as any,
+      notifications as any,
+    );
+
+    await service.verify(
+      'proof-1',
+      { status: 'verified' },
+      'seller-1',
+      'seller',
+    );
+
+    expect(prisma.preOrder.update).not.toHaveBeenCalled();
+    expect(prisma.paymentSubmission.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 'proof-1' },
+        data: expect.objectContaining({ status: 'verified' }),
+      }),
+    );
+  });
 });

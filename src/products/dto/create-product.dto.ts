@@ -8,6 +8,8 @@ import {
   IsIn,
   IsInt,
   IsObject,
+  ArrayMaxSize,
+  ArrayUnique,
   Max,
   Min,
 } from 'class-validator';
@@ -31,6 +33,8 @@ export class CreateProductDto {
 
   @IsOptional()
   @IsArray()
+  @ArrayMaxSize(8)
+  @ArrayUnique()
   @IsString({ each: true })
   images?: string[];
 

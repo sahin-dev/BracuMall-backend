@@ -1,6 +1,8 @@
 import { Module } from '@nestjs/common';
+import { APP_GUARD } from '@nestjs/core';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { JwtModule } from '@nestjs/jwt';
+import { ThrottlerModule } from '@nestjs/throttler';
 import jwtConfig from './config/jwt.config';
 import { PrismaModule } from './prisma/prisma.module';
 import { UsersModule } from './users/users.module';
@@ -27,10 +29,32 @@ import { EventsModule } from './events/events.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { MessagingModule } from './messaging/messaging.module';
 import { ComplaintsModule } from './complaints/complaints.module';
+import { CouponsModule } from './coupons/coupons.module';
+import { HeroSlidesModule } from './hero-slides/hero-slides.module';
+import { ApiThrottlerGuard } from './common/guards/api-throttler.guard';
+import { positiveInteger } from './common/rate-limit/rate-limit.util';
 
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true, load: [jwtConfig] }),
+    ThrottlerModule.forRootAsync({
+      imports: [ConfigModule],
+      inject: [ConfigService],
+      useFactory: (config: ConfigService) => ({
+        throttlers: [
+          {
+            name: 'default',
+            ttl: positiveInteger(config.get('RATE_LIMIT_TTL_MS'), 60_000),
+            limit: positiveInteger(config.get('RATE_LIMIT_MAX'), 120),
+            blockDuration: positiveInteger(
+              config.get('RATE_LIMIT_BLOCK_MS'),
+              60_000,
+            ),
+          },
+        ],
+        errorMessage: 'Too many requests. Please try again shortly.',
+      }),
+    }),
     PrismaModule,
     JwtModule.registerAsync({
       global: true,
@@ -65,6 +89,9 @@ import { ComplaintsModule } from './complaints/complaints.module';
     DonationsModule,
     DeliveryLocationsModule,
     AdminModule,
+    CouponsModule,
+    HeroSlidesModule,
   ],
+  providers: [{ provide: APP_GUARD, useClass: ApiThrottlerGuard }],
 })
 export class AppModule {}

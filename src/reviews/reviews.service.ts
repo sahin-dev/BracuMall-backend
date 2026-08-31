@@ -5,6 +5,7 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { assertOwnership } from '../common/utils/ownership.util';
+import { MAX_LIST_SIZE } from '../common/utils/pagination.util';
 
 @Injectable()
 export class ReviewsService {
@@ -21,6 +22,7 @@ export class ReviewsService {
       valueRating?: number;
       packagingRating?: number;
       serviceRating?: number;
+      images?: string[];
     },
     buyerId: string,
   ) {
@@ -61,6 +63,7 @@ export class ReviewsService {
         valueRating: dto.valueRating,
         packagingRating: dto.packagingRating,
         serviceRating: dto.serviceRating,
+        images: dto.images ?? [],
       },
     });
 
@@ -99,6 +102,7 @@ export class ReviewsService {
       where: { productId },
       include: { buyer: { select: { id: true, name: true, avatar: true } } },
       orderBy: { createdAt: 'desc' },
+      take: MAX_LIST_SIZE,
     });
   }
 
@@ -107,6 +111,34 @@ export class ReviewsService {
       where: { storeId },
       include: { buyer: { select: { id: true, name: true, avatar: true } } },
       orderBy: { createdAt: 'desc' },
+      take: MAX_LIST_SIZE,
+    });
+  }
+
+  async toggleHelpful(id: string, userId: string) {
+    const review = await this.prisma.review.findUniqueOrThrow({ where: { id } });
+    const alreadyMarked = review.helpfulUserIds.includes(userId);
+    return this.prisma.review.update({
+      where: { id },
+      data: alreadyMarked
+        ? {
+            helpfulUserIds: { set: review.helpfulUserIds.filter((uid) => uid !== userId) },
+            helpfulCount: { decrement: 1 },
+          }
+        : {
+            helpfulUserIds: { push: userId },
+            helpfulCount: { increment: 1 },
+          },
+    });
+  }
+
+  async reply(id: string, ownerId: string, message: string) {
+    const review = await this.prisma.review.findUniqueOrThrow({ where: { id } });
+    const store = await this.prisma.store.findUniqueOrThrow({ where: { id: review.storeId } });
+    assertOwnership(store.ownerId === ownerId, 'Not your store');
+    return this.prisma.review.update({
+      where: { id },
+      data: { sellerReply: message, sellerRepliedAt: new Date() },
     });
   }
 }

@@ -19,6 +19,7 @@ import type { StorageService } from './storage/storage.interface';
 import type { Response } from 'express';
 import { PrismaService } from '../prisma/prisma.service';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
+import { Throttle } from '@nestjs/throttler';
 
 const IMAGE_FOLDERS = ['products', 'stores', 'avatars', 'payments'];
 const MAX_IMAGE_SIZE = 5 * 1024 * 1024;
@@ -33,6 +34,7 @@ export class UploadsController {
   ) {}
 
   @Post('image')
+  @Throttle({ default: { limit: 40, ttl: 60_000, blockDuration: 60_000 } })
   @UseInterceptors(
     FileInterceptor('file', {
       limits: { fileSize: MAX_IMAGE_SIZE },
@@ -70,6 +72,9 @@ export class UploadsController {
   }
 
   @Post('document')
+  @Throttle({
+    default: { limit: 10, ttl: 10 * 60_000, blockDuration: 10 * 60_000 },
+  })
   @UseInterceptors(
     FileInterceptor('file', {
       limits: { fileSize: MAX_DOCUMENT_SIZE },

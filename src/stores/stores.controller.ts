@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Patch, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, Query, UseGuards } from '@nestjs/common';
 import { StoresService } from './stores.service';
 import { UpdateStoreDto } from './dto/store.dto';
 import { UpdateSellingCategoriesDto } from './dto/update-selling-categories.dto';
@@ -12,8 +12,8 @@ export class StoresController {
   constructor(private readonly storesService: StoresService) {}
 
   @Get()
-  findAll() {
-    return this.storesService.findAllActive();
+  findAll(@Query() query: any) {
+    return this.storesService.findAllActive(query);
   }
 
   @Get('admin/all')

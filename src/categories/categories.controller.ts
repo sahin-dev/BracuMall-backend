@@ -6,6 +6,7 @@ import {
   Param,
   Patch,
   Post,
+  Query,
   UseGuards,
 } from '@nestjs/common';
 import { CategoriesService } from './categories.service';
@@ -26,8 +27,8 @@ export class CategoriesController {
   }
 
   @Get()
-  findAll() {
-    return this.categoriesService.findAll();
+  findAll(@Query() query: any) {
+    return this.categoriesService.findAll(query);
   }
 
   @Get('all')

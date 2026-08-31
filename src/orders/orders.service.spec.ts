@@ -42,6 +42,27 @@ describe('OrdersService', () => {
     expect(prisma.$transaction).not.toHaveBeenCalled();
   });
 
+  it('does not let a buyer cancel while payment proof is under review', async () => {
+    const prisma = {
+      order: {
+        findUniqueOrThrow: jest.fn().mockResolvedValue({
+          id: 'order-1',
+          buyerId: 'buyer-1',
+          sellerId: 'seller-1',
+          status: 'pending',
+          paymentStatus: 'pending_verification',
+        }),
+      },
+      $transaction: jest.fn(),
+    };
+    const service = new OrdersService(prisma as any, notifications as any);
+
+    await expect(service.cancelByBuyer('order-1', 'buyer-1')).rejects.toThrow(
+      'payment proof must be reviewed',
+    );
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+
   it('uses current product prices and reserves stock in one transaction', async () => {
     const createdOrder = { id: 'order-1', sellerId: 'seller-1', total: 220, items: [{ id: 'item-1' }] };
     const tx = {

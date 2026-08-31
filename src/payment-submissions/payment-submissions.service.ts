@@ -69,9 +69,15 @@ export class PaymentSubmissionsService {
         where: { id: dto.preOrderId },
       });
       assertOwnership(preOrder.buyerId === submittedBy, 'Not your pre-order');
-      if (['cancelled', 'fulfilled'].includes(preOrder.status))
+      if (preOrder.paymentType !== 'prepaid')
         throw new BadRequestException(
-          'This pre-order is not accepting payments',
+          'Payment proof is only required for prepaid pre-orders',
+        );
+      if (preOrder.status !== 'pending')
+        throw new BadRequestException(
+          preOrder.status === 'awaiting_payment'
+            ? 'A deposit proof is already awaiting review'
+            : 'This pre-order is not accepting payment proof',
         );
       if (!dto.sellerPaymentMethodId)
         throw new BadRequestException('sellerPaymentMethodId is required');
@@ -140,6 +146,34 @@ export class PaymentSubmissionsService {
       );
 
     const submission = await this.prisma.$transaction(async (tx) => {
+      if (dto.orderId) {
+        const claimedOrder = await tx.order.updateMany({
+          where: {
+            id: dto.orderId,
+            status: { notIn: ['cancelled', 'delivered'] },
+            paymentStatus: { in: ['unpaid', 'rejected'] },
+          },
+          data: { paymentStatus: 'pending_verification' },
+        });
+        if (claimedOrder.count !== 1)
+          throw new BadRequestException(
+            'This order is no longer accepting payment proof',
+          );
+      }
+      if (dto.preOrderId) {
+        const claimedPreOrder = await tx.preOrder.updateMany({
+          where: {
+            id: dto.preOrderId,
+            paymentType: 'prepaid',
+            status: 'pending',
+          },
+          data: { status: 'awaiting_payment' },
+        });
+        if (claimedPreOrder.count !== 1)
+          throw new BadRequestException(
+            'This pre-order is no longer accepting payment proof',
+          );
+      }
       const created = await tx.paymentSubmission.create({
         data: {
           orderId: dto.orderId,
@@ -156,18 +190,6 @@ export class PaymentSubmissionsService {
           screenshotUrl: dto.screenshotUrl,
         },
       });
-      if (dto.orderId) {
-        await tx.order.update({
-          where: { id: dto.orderId },
-          data: { paymentStatus: 'pending_verification' },
-        });
-      }
-      if (dto.preOrderId) {
-        await tx.preOrder.update({
-          where: { id: dto.preOrderId },
-          data: { status: 'awaiting_payment' },
-        });
-      }
       return created;
     });
 
@@ -298,15 +320,19 @@ export class PaymentSubmissionsService {
         'Not authorized to verify this payment',
       );
       if (dto.status === 'verified') {
-        await this.prisma.preOrder.update({
-          where: { id: preOrder.id },
-          data: { status: 'confirmed' as any },
-        });
+        if (preOrder.status === 'awaiting_payment') {
+          await this.prisma.preOrder.update({
+            where: { id: preOrder.id },
+            data: { status: 'confirmed' as any },
+          });
+        }
       } else {
-        await this.prisma.preOrder.update({
-          where: { id: preOrder.id },
-          data: { status: 'pending' },
-        });
+        if (preOrder.status === 'awaiting_payment') {
+          await this.prisma.preOrder.update({
+            where: { id: preOrder.id },
+            data: { status: 'pending' },
+          });
+        }
       }
     } else if (submission.donationId) {
       assertOwnership(role === 'admin', 'Only admin can verify donations');

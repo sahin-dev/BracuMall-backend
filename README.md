@@ -59,6 +59,22 @@ $ npm run test:cov
 
 ## Deployment
 
+### API rate limiting
+
+HTTP API routes are limited to 120 requests per minute per client by default. Authentication and upload routes use stricter route-specific limits. Successful responses include `X-RateLimit-Limit`, `X-RateLimit-Remaining`, and `X-RateLimit-Reset`; blocked requests return HTTP 429 with `Retry-After`.
+
+The defaults can be changed with:
+
+```env
+RATE_LIMIT_MAX=120
+RATE_LIMIT_TTL_MS=60000
+RATE_LIMIT_BLOCK_MS=60000
+```
+
+Client addresses come directly from the connection unless `TRUST_PROXY` is configured. For a reverse proxy on the same host, use `TRUST_PROXY=loopback`; a numeric value such as `TRUST_PROXY=1` trusts that many proxy hops. Only configure trusted proxy addresses or hop counts controlled by your deployment.
+
+The built-in limiter uses process memory. Multi-instance deployments should configure a shared `@nestjs/throttler` storage provider, such as Redis, so every instance uses the same counters.
+
 When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.
 
 If you are looking for a cloud-based platform to deploy your NestJS application, check out [Mau](https://mau.nestjs.com), our official platform for deploying NestJS applications on AWS. Mau makes deployment straightforward and fast, requiring just a few simple steps:

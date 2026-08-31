@@ -3,12 +3,14 @@ import {
   Body,
   Controller,
   Get,
+  Param,
+  Patch,
   Post,
   Query,
   UseGuards,
 } from '@nestjs/common';
 import { ReviewsService } from './reviews.service';
-import { CreateReviewDto } from './dto/create-review.dto';
+import { CreateReviewDto, ReplyReviewDto } from './dto/create-review.dto';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { RolesGuard } from '../common/guards/roles.guard';
@@ -33,5 +35,23 @@ export class ReviewsController {
     if (productId) return this.reviewsService.findForProduct(productId);
     if (storeId) return this.reviewsService.findForStore(storeId);
     throw new BadRequestException('Provide productId or storeId');
+  }
+
+  @Patch(':id/helpful')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('buyer', 'seller')
+  toggleHelpful(@Param('id') id: string, @CurrentUser('id') userId: string) {
+    return this.reviewsService.toggleHelpful(id, userId);
+  }
+
+  @Patch(':id/reply')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('seller')
+  reply(
+    @Param('id') id: string,
+    @Body() dto: ReplyReviewDto,
+    @CurrentUser('id') ownerId: string,
+  ) {
+    return this.reviewsService.reply(id, ownerId, dto.message);
   }
 }

@@ -164,6 +164,47 @@ model Store {
 
   paymentMethods SellerPaymentMethod[]
   favoritedBy    StoreFavorite[]
+  coupons        Coupon[]
+}
+
+enum CouponDiscountType {
+  percentage
+  fixed
+}
+
+model Coupon {
+  id              String             @id @default(auto()) @map("_id") @db.ObjectId
+  storeId         String             @db.ObjectId
+  store           Store              @relation(fields: [storeId], references: [id])
+  code            String
+  description     String?
+  discountType    CouponDiscountType
+  discountValue   Float
+  minOrderValue   Float?
+  maxRedemptions  Int?
+  redemptionCount Int                @default(0)
+  startsAt        DateTime?
+  expiresAt       DateTime?
+  isActive        Boolean            @default(true)
+  createdAt       DateTime           @default(now())
+
+  @@unique([storeId, code])
+  @@index([storeId])
+}
+
+model HeroSlide {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  imageUrl  String
+  headline  String
+  subtext   String?
+  ctaLabel  String?
+  ctaHref   String?
+  sortOrder Int      @default(0)
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([isActive])
 }
 
 enum PaymentMethodType {
@@ -258,6 +299,8 @@ model Order {
   inventoryRestored  Boolean              @default(false)
   notes              String?
   paymentMethod      String               @default("cod")
+  couponCode         String?
+  discountAmount     Float                @default(0)
   createdAt          DateTime             @default(now())
   items              OrderItem[]
   statusHistory      OrderStatusHistory[]
@@ -474,12 +517,12 @@ model PaymentSubmission {
 }
 
 model Review {
-  id              String   @id @default(auto()) @map("_id") @db.ObjectId
+  id              String    @id @default(auto()) @map("_id") @db.ObjectId
   productId       String
   storeId         String
   orderId         String
-  buyerId         String   @db.ObjectId
-  buyer           User     @relation(fields: [buyerId], references: [id])
+  buyerId         String    @db.ObjectId
+  buyer           User      @relation(fields: [buyerId], references: [id])
   rating          Int
   tasteRating     Int?
   qualityRating   Int?
@@ -487,7 +530,12 @@ model Review {
   packagingRating Int?
   serviceRating   Int?
   comment         String?
-  createdAt       DateTime @default(now())
+  images          String[]  @default([])
+  helpfulCount    Int       @default(0)
+  helpfulUserIds  String[]  @default([])
+  sellerReply     String?
+  sellerRepliedAt DateTime?
+  createdAt       DateTime  @default(now())
 
   @@unique([orderId, productId])
   @@index([productId])

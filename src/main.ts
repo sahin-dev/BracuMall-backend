@@ -6,10 +6,15 @@ import { existsSync, mkdirSync } from 'fs';
 import { join } from 'path';
 import { AppModule } from './app.module';
 import { ConfigService } from '@nestjs/config';
+import { parseTrustProxySetting } from './common/rate-limit/rate-limit.util';
 
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
   const configService = app.get(ConfigService);
+  const trustProxy = parseTrustProxySetting(
+    configService.get<string>('TRUST_PROXY'),
+  );
+  if (trustProxy !== false) app.set('trust proxy', trustProxy);
 
   const uploadsDir = join(process.cwd(), 'uploads');
   if (!existsSync(uploadsDir)) mkdirSync(uploadsDir, { recursive: true });

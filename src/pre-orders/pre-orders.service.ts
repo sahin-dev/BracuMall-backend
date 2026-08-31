@@ -5,8 +5,8 @@ import { assertOwnership } from '../common/utils/ownership.util';
 import { MAX_LIST_SIZE } from '../common/utils/pagination.util';
 
 export const PRE_ORDER_TRANSITIONS: Record<string, string[]> = {
-  pending: ['awaiting_payment', 'confirmed', 'cancelled'],
-  awaiting_payment: ['confirmed', 'cancelled'],
+  pending: ['confirmed', 'cancelled'],
+  awaiting_payment: [],
   confirmed: ['fulfilled', 'cancelled'],
   fulfilled: [],
   cancelled: [],
@@ -180,9 +180,11 @@ export class PreOrdersService {
       where: { id },
     });
     assertOwnership(preOrder.buyerId === buyerId, 'Not your pre-order');
-    if (!['pending', 'awaiting_payment'].includes(preOrder.status))
+    if (preOrder.status !== 'pending')
       throw new BadRequestException(
-        'This pre-order can no longer be cancelled',
+        preOrder.status === 'awaiting_payment'
+          ? 'Your deposit proof must be reviewed before this pre-order can be cancelled. Contact the seller for help.'
+          : 'This pre-order can no longer be cancelled',
       );
     const updated = await this.prisma.preOrder.update({
       where: { id },
