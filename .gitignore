@@ -3,5 +3,6 @@ node_modules
 .env
 
 /uploads
+/private-uploads
 /dist
 /generated
