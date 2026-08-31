@@ -8,7 +8,9 @@ import {
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { Server, Socket } from 'socket.io';
+import { parse as parseCookies } from 'cookie';
 import { PrismaService } from '../prisma/prisma.service';
+import { ACCESS_TOKEN_COOKIE } from '../common/utils/auth-cookies.util';
 
 @Injectable()
 @WebSocketGateway({
@@ -31,7 +33,9 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
   async handleConnection(client: Socket) {
     try {
-      const token = client.handshake.auth?.token as string;
+      const cookieHeader = client.handshake.headers.cookie;
+      const cookies = cookieHeader ? parseCookies(cookieHeader) : {};
+      const token = cookies[ACCESS_TOKEN_COOKIE] || (client.handshake.auth?.token as string);
       if (!token) throw new Error('No token');
       const payload = this.jwtService.verify(token, {
         secret: this.config.get<string>('jwt.secret', 'fallback-secret'),

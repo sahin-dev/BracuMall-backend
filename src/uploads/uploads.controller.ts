@@ -24,6 +24,22 @@ import { Throttle } from '@nestjs/throttler';
 const IMAGE_FOLDERS = ['products', 'stores', 'avatars', 'payments', 'hero', 'reviews'];
 const MAX_IMAGE_SIZE = 5 * 1024 * 1024;
 const MAX_DOCUMENT_SIZE = 10 * 1024 * 1024;
+const ALLOWED_IMAGE_MIMES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
+const ALLOWED_DOCUMENT_MIMES = [...ALLOWED_IMAGE_MIMES, 'application/pdf'];
+
+// A spoofed extension/Content-Type passes multer's fileFilter (it only sees
+// what the client claims), so every upload is re-checked here against the
+// file's actual magic bytes before it's ever written to disk or served back.
+async function assertRealFileType(
+  file: Express.Multer.File,
+  allowedMimes: string[],
+) {
+  const { fileTypeFromBuffer } = await import('file-type');
+  const detected = await fileTypeFromBuffer(file.buffer);
+  if (!detected || !allowedMimes.includes(detected.mime)) {
+    throw new BadRequestException('File content does not match an allowed type');
+  }
+}
 
 @Controller('uploads')
 @UseGuards(JwtAuthGuard)
@@ -53,6 +69,7 @@ export class UploadsController {
       );
     if (!IMAGE_FOLDERS.includes(folder))
       throw new BadRequestException('Invalid folder');
+    await assertRealFileType(file, ALLOWED_IMAGE_MIMES);
     if (folder === 'payments') {
       const storageKey = await this.storage.savePrivate(file);
       const upload = await this.prisma.privateUpload.create({
@@ -94,6 +111,7 @@ export class UploadsController {
       throw new BadRequestException(
         'No file uploaded, or file must be an image or PDF',
       );
+    await assertRealFileType(file, ALLOWED_DOCUMENT_MIMES);
     const storageKey = await this.storage.savePrivate(file);
     const upload = await this.prisma.privateUpload.create({
       data: {

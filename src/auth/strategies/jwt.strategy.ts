@@ -2,7 +2,13 @@ import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { PassportStrategy } from '@nestjs/passport';
 import { ExtractJwt, Strategy } from 'passport-jwt';
 import { ConfigService } from '@nestjs/config';
+import type { Request } from 'express';
 import { PrismaService } from '../../prisma/prisma.service';
+import { ACCESS_TOKEN_COOKIE } from '../../common/utils/auth-cookies.util';
+
+function cookieExtractor(req: Request): string | null {
+  return req?.cookies?.[ACCESS_TOKEN_COOKIE] || null;
+}
 
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy) {
@@ -11,7 +17,12 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     private prisma: PrismaService,
   ) {
     super({
-      jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
+      // Cookie first (browser clients), falling back to a Bearer header so
+      // Swagger's "Try it out" and non-browser API callers keep working.
+      jwtFromRequest: ExtractJwt.fromExtractors([
+        cookieExtractor,
+        ExtractJwt.fromAuthHeaderAsBearerToken(),
+      ]),
       ignoreExpiration: false,
       secretOrKey: config.get<string>('jwt.secret', 'fallback-secret'),
     });
