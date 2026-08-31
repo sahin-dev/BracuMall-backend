@@ -1,9 +1,11 @@
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import type { ApplicationStatus, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { StoresService } from '../stores/stores.service';
 import { NotificationsService } from '../notifications/notifications.service';
@@ -61,8 +63,14 @@ export class SellerApplicationsService {
     }
 
     await this.assertOwnedDocuments(userId, this.documentUrls(dto));
+    const category = await this.resolveCategory(dto.categoryId);
     const application = await this.prisma.sellerApplication.create({
-      data: { ...this.applicationData(dto), userId },
+      data: {
+        ...this.applicationData(dto),
+        categoryId: category.id,
+        categoryName: category.name,
+        userId,
+      },
       include: { user: { select: applicationUserSelect } },
     });
     await this.notifications.notifyAdmins({
@@ -75,8 +83,19 @@ export class SellerApplicationsService {
   }
 
   findAll(status?: string) {
-    const where: any = {};
-    if (status) where.status = status;
+    const where: Prisma.SellerApplicationWhereInput = {};
+    if (status) {
+      const allowedStatuses: ApplicationStatus[] = [
+        'pending',
+        'more_info_requested',
+        'approved',
+        'rejected',
+      ];
+      if (!allowedStatuses.includes(status as ApplicationStatus)) {
+        throw new BadRequestException('Invalid application status');
+      }
+      where.status = status as ApplicationStatus;
+    }
     return this.prisma.sellerApplication.findMany({
       where,
       include: { user: { select: applicationUserSelect } },
@@ -141,8 +160,8 @@ export class SellerApplicationsService {
         application.presentAddress,
         application.permanentAddress,
       ].every(Boolean);
-      const hasSellingCategories = application.sellingCategories.length > 0;
-      if (!checksComplete || !applicationComplete || !hasSellingCategories) {
+      const hasCategory = Boolean(application.categoryId);
+      if (!checksComplete || !applicationComplete || !hasCategory) {
         throw new BadRequestException(
           'Complete every verification check and required applicant field before approval',
         );
@@ -151,41 +170,57 @@ export class SellerApplicationsService {
     if (dto.status === 'rejected' && !dto.rejectionReason?.trim()) {
       throw new BadRequestException('A rejection reason is required');
     }
+    const approvedCategory =
+      dto.status === 'approved'
+        ? await this.resolveCategory(application.categoryId!)
+        : null;
 
-    await this.prisma.sellerApplication.update({
-      where: { id },
-      data: {
-        status: dto.status,
-        identityVerified: Boolean(dto.identityVerified),
-        studentStatusVerified: Boolean(dto.studentStatusVerified),
-        addressVerified: Boolean(dto.addressVerified),
-        contactVerified: Boolean(dto.contactVerified),
-        documentsVerified: Boolean(dto.documentsVerified),
-        verificationNote: dto.verificationNote?.trim(),
-        reviewedBy: adminId,
-        reviewedAt: new Date(),
-        rejectionReason: dto.rejectionReason?.trim(),
-      },
-    });
-
-    if (dto.status === 'approved') {
-      const user = await this.prisma.user.update({
-        where: { id: application.userId },
+    await this.prisma.$transaction(async (tx) => {
+      const transitioned = await tx.sellerApplication.updateMany({
+        where: { id, status: application.status },
         data: {
-          isApproved: true,
-          role: 'seller',
-          phone: application.phoneNumber,
-          whatsappNumber: application.whatsappNumber,
-          studentId: application.studentId,
-          department: application.department,
+          status: dto.status,
+          identityVerified: Boolean(dto.identityVerified),
+          studentStatusVerified: Boolean(dto.studentStatusVerified),
+          addressVerified: Boolean(dto.addressVerified),
+          contactVerified: Boolean(dto.contactVerified),
+          documentsVerified: Boolean(dto.documentsVerified),
+          verificationNote: dto.verificationNote?.trim(),
+          reviewedBy: adminId,
+          reviewedAt: new Date(),
+          rejectionReason: dto.rejectionReason?.trim(),
         },
       });
-      await this.storesService.createForOwner(
-        user.id,
-        `${user.name}'s Store`,
-        application.sellingCategories,
-      );
-    }
+      if (transitioned.count !== 1) {
+        throw new ConflictException(
+          'This application was changed by another administrator',
+        );
+      }
+
+      if (dto.status === 'approved') {
+        const user = await tx.user.update({
+          where: { id: application.userId },
+          data: {
+            isApproved: true,
+            role: 'seller',
+            phone: application.phoneNumber,
+            whatsappNumber: application.whatsappNumber,
+            studentId: application.studentId,
+            department: application.department,
+          },
+        });
+        await this.storesService.createForOwner(
+          user.id,
+          `${user.name}'s Store`,
+          {
+            categoryId: approvedCategory!.id,
+            categoryName: approvedCategory!.name,
+            mode: approvedCategory!.mode,
+          },
+          tx,
+        );
+      }
+    });
 
     await this.notifications.create(application.userId, {
       type: 'application_status',
@@ -197,6 +232,11 @@ export class SellerApplicationsService {
   }
 
   async requestInfo(id: string, note: string, adminId: string) {
+    if (!note.trim()) {
+      throw new BadRequestException(
+        'Describe the information that is required',
+      );
+    }
     const application = await this.prisma.sellerApplication.findUnique({
       where: { id },
     });
@@ -237,10 +277,13 @@ export class SellerApplicationsService {
     }
 
     await this.assertOwnedDocuments(userId, this.documentUrls(dto));
+    const category = await this.resolveCategory(dto.categoryId);
     const updated = await this.prisma.sellerApplication.update({
       where: { id },
       data: {
         ...this.applicationData(dto),
+        categoryId: category.id,
+        categoryName: category.name,
         status: 'pending',
         adminNote: null,
         identityVerified: false,
@@ -277,8 +320,16 @@ export class SellerApplicationsService {
       permanentAddress: dto.permanentAddress.trim(),
       documents: dto.documents || [],
       description: dto.description?.trim(),
-      sellingCategories: dto.sellingCategories || [],
     };
+  }
+
+  private async resolveCategory(categoryId: string) {
+    const category = await this.prisma.category.findUnique({
+      where: { id: categoryId },
+    });
+    if (!category?.isActive)
+      throw new BadRequestException('Select an active category');
+    return category;
   }
 
   private documentUrls(dto: CreateApplicationDto) {

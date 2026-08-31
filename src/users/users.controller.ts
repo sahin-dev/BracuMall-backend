@@ -48,11 +48,4 @@ export class UsersController {
   findOne(@Param('id') id: string) {
     return this.usersService.findById(id);
   }
-
-  @Patch(':id/approve-seller')
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('admin')
-  approveSeller(@Param('id') id: string) {
-    return this.usersService.approveSeller(id);
-  }
 }

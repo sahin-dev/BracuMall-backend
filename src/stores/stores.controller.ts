@@ -58,7 +58,7 @@ export class StoresController {
     @Param('id') id: string,
     @Body() dto: UpdateSellingCategoriesDto,
   ) {
-    return this.storesService.updateSellingCategoriesAdmin(id, dto.categoryIds);
+    return this.storesService.updateCategoryAdmin(id, dto.categoryId);
   }
 
   @Get(':slug')

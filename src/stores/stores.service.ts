@@ -1,4 +1,5 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
+import { ProductType, StoreMode, type Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { assertOwnership } from '../common/utils/ownership.util';
 import { MAX_LIST_SIZE } from '../common/utils/pagination.util';
@@ -7,7 +8,10 @@ import { MAX_LIST_SIZE } from '../common/utils/pagination.util';
 export class StoresService {
   constructor(private prisma: PrismaService) {}
 
-  private async generateSlug(name: string) {
+  private async generateSlug(
+    name: string,
+    db: PrismaService | Prisma.TransactionClient = this.prisma,
+  ) {
     const base =
       name
         .toLowerCase()
@@ -16,7 +20,7 @@ export class StoresService {
 
     let slug = base;
     let suffix = 1;
-    while (await this.prisma.store.findUnique({ where: { slug } })) {
+    while (await db.store.findUnique({ where: { slug } })) {
       slug = `${base}-${++suffix}`;
     }
     return slug;
@@ -25,13 +29,25 @@ export class StoresService {
   async createForOwner(
     ownerId: string,
     name: string,
-    sellingCategories: string[] = [],
+    category: {
+      categoryId: string;
+      categoryName: string;
+      mode: StoreMode;
+    },
+    db: PrismaService | Prisma.TransactionClient = this.prisma,
   ) {
-    const existing = await this.prisma.store.findUnique({ where: { ownerId } });
+    const existing = await db.store.findUnique({ where: { ownerId } });
     if (existing) return existing;
-    const slug = await this.generateSlug(name);
-    return this.prisma.store.create({
-      data: { ownerId, name, slug, sellingCategories },
+    const slug = await this.generateSlug(name, db);
+    return db.store.create({
+      data: {
+        ownerId,
+        name,
+        slug,
+        categoryId: category.categoryId,
+        categoryName: category.categoryName,
+        mode: category.mode,
+      },
     });
   }
 
@@ -42,10 +58,22 @@ export class StoresService {
         [field]: { contains: query.search, mode: 'insensitive' },
       }));
     }
-    const allowedSortFields = new Set(['createdAt', 'name', 'ratingAvg', 'ratingCount']);
-    const [requestedField, requestedDirection] = String(query.sort || 'createdAt:desc').split(':');
-    const sortField = allowedSortFields.has(requestedField) ? requestedField : 'createdAt';
-    const take = Math.min(Math.max(Number(query.limit) || MAX_LIST_SIZE, 1), MAX_LIST_SIZE);
+    const allowedSortFields = new Set([
+      'createdAt',
+      'name',
+      'ratingAvg',
+      'ratingCount',
+    ]);
+    const [requestedField, requestedDirection] = String(
+      query.sort || 'createdAt:desc',
+    ).split(':');
+    const sortField = allowedSortFields.has(requestedField)
+      ? requestedField
+      : 'createdAt';
+    const take = Math.min(
+      Math.max(Number(query.limit) || MAX_LIST_SIZE, 1),
+      MAX_LIST_SIZE,
+    );
     const skip = Math.max(Number(query.skip) || 0, 0);
     const [items, total] = await Promise.all([
       this.prisma.store.findMany({
@@ -54,18 +82,30 @@ export class StoresService {
         take,
         skip,
       }),
-      query.withMeta === 'true' ? this.prisma.store.count({ where }) : Promise.resolve(0),
+      query.withMeta === 'true'
+        ? this.prisma.store.count({ where })
+        : Promise.resolve(0),
     ]);
 
-    let enrichedItems: Array<(typeof items)[number] & { productCount?: number }> = items;
+    let enrichedItems: Array<
+      (typeof items)[number] & { productCount?: number }
+    > = items;
     if (query.withCounts === 'true' && items.length > 0) {
       const counts = await this.prisma.product.groupBy({
         by: ['storeId'],
-        where: { isActive: true, storeId: { in: items.map((store) => store.id) } },
+        where: {
+          isActive: true,
+          storeId: { in: items.map((store) => store.id) },
+        },
         _count: { _all: true },
       });
-      const countByStore = new Map(counts.map((entry) => [entry.storeId, entry._count._all]));
-      enrichedItems = items.map((store) => ({ ...store, productCount: countByStore.get(store.id) || 0 }));
+      const countByStore = new Map(
+        counts.map((entry) => [entry.storeId, entry._count._all]),
+      );
+      enrichedItems = items.map((store) => ({
+        ...store,
+        productCount: countByStore.get(store.id) || 0,
+      }));
     }
 
     return query.withMeta === 'true'
@@ -95,7 +135,6 @@ export class StoresService {
       description?: string;
       logoUrl?: string;
       bannerUrl?: string;
-      mode?: 'general' | 'food' | 'hybrid';
       location?: string;
       isOpen?: boolean;
       acceptsPickup?: boolean;
@@ -106,6 +145,7 @@ export class StoresService {
       prepTimeMax?: number;
       openingHours?: any;
       foodSafetyNote?: string;
+      brandColor?: string;
     },
   ) {
     const store = await this.prisma.store.findUnique({ where: { ownerId } });
@@ -118,12 +158,42 @@ export class StoresService {
     return this.prisma.store.update({ where: { id }, data: { isActive } });
   }
 
-  async updateSellingCategoriesAdmin(id: string, categoryIds: string[]) {
-    await this.prisma.store.findUniqueOrThrow({ where: { id } });
-    return this.prisma.store.update({
-      where: { id },
-      data: { sellingCategories: categoryIds },
+  async updateCategoryAdmin(id: string, categoryId: string) {
+    const store = await this.prisma.store.findUniqueOrThrow({ where: { id } });
+    const category = await this.prisma.category.findUniqueOrThrow({
+      where: { id: categoryId },
     });
+    return this.prisma.$transaction(async (tx) => {
+      const updatedStore = await tx.store.update({
+        where: { id },
+        data: {
+          categoryId: category.id,
+          categoryName: category.name,
+          mode: category.mode,
+        },
+      });
+      await tx.product.updateMany({
+        where: { storeId: store.id },
+        data: { categoryId: category.id, categoryName: category.name },
+      });
+      const requiredType = this.requiredProductType(category.mode);
+      if (requiredType) {
+        await tx.product.updateMany({
+          where: {
+            storeId: store.id,
+            productType: { not: requiredType },
+            isActive: true,
+          },
+          data: { isActive: false },
+        });
+      }
+      return updatedStore;
+    });
+  }
+
+  private requiredProductType(mode: StoreMode): ProductType | null {
+    if (mode === StoreMode.hybrid) return null;
+    return mode === StoreMode.food ? ProductType.food : ProductType.general;
   }
 
   async assertOwnerAndGetStore(storeId: string, ownerId: string) {

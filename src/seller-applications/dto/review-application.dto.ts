@@ -1,4 +1,11 @@
-import { IsBoolean, IsIn, IsOptional, IsString } from 'class-validator';
+import {
+  IsBoolean,
+  IsIn,
+  IsNotEmpty,
+  IsOptional,
+  IsString,
+  MaxLength,
+} from 'class-validator';
 
 export class ReviewApplicationDto {
   @IsString()
@@ -27,9 +34,12 @@ export class ReviewApplicationDto {
 
   @IsOptional()
   @IsString()
+  @MaxLength(2000)
   verificationNote?: string;
 
   @IsOptional()
   @IsString()
+  @IsNotEmpty()
+  @MaxLength(1000)
   rejectionReason?: string;
 }

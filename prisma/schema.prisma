@@ -60,36 +60,41 @@ enum PrivateUploadPurpose {
 }
 
 model User {
-  id                  String              @id @default(auto()) @map("_id") @db.ObjectId
-  email               String              @unique
-  name                String
-  password            String
-  role                UserRole            @default(buyer)
-  isApproved          Boolean             @default(false)
-  isEmailVerified     Boolean?            @default(false)
-  emailVerifiedAt     DateTime?
-  emailOtpHash        String?
-  emailOtpExpiresAt   DateTime?
-  isSuspended         Boolean             @default(false)
-  phone               String?
-  whatsappNumber      String?
-  avatar              String?
-  studentId           String?
-  department          String?
-  preferredLocation   String?
-  emailOtpSentAt      DateTime?
-  emailOtpAttempts    Int                 @default(0)
-  failedLoginAttempts Int                 @default(0)
-  lockedUntil         DateTime?
-  createdAt           DateTime            @default(now())
-  updatedAt           DateTime            @updatedAt
-  sellerApplications  SellerApplication[]
-  orders              Order[]             @relation("BuyerOrders")
-  preOrders           PreOrder[]          @relation("BuyerPreOrders")
-  wishlistItems       Wishlist[]
-  storeFavorites      StoreFavorite[]
-  reviews             Review[]
-  donations           Donation[]
+  id                        String              @id @default(auto()) @map("_id") @db.ObjectId
+  email                     String              @unique
+  name                      String
+  password                  String
+  role                      UserRole            @default(buyer)
+  isApproved                Boolean             @default(false)
+  isEmailVerified           Boolean?            @default(false)
+  emailVerifiedAt           DateTime?
+  emailOtpHash              String?
+  emailOtpExpiresAt         DateTime?
+  isSuspended               Boolean             @default(false)
+  phone                     String?
+  whatsappNumber            String?
+  avatar                    String?
+  studentId                 String?
+  department                String?
+  preferredLocation         String?
+  emailOtpSentAt            DateTime?
+  emailOtpAttempts          Int                 @default(0)
+  passwordResetOtpHash      String?
+  passwordResetOtpExpiresAt DateTime?
+  passwordResetOtpSentAt    DateTime?
+  passwordResetOtpAttempts  Int                 @default(0)
+  sessionVersion            Int                 @default(0)
+  failedLoginAttempts       Int                 @default(0)
+  lockedUntil               DateTime?
+  createdAt                 DateTime            @default(now())
+  updatedAt                 DateTime            @updatedAt
+  sellerApplications        SellerApplication[]
+  orders                    Order[]             @relation("BuyerOrders")
+  preOrders                 PreOrder[]          @relation("BuyerPreOrders")
+  wishlistItems             Wishlist[]
+  storeFavorites            StoreFavorite[]
+  reviews                   Review[]
+  donations                 Donation[]
 }
 
 enum ApplicationStatus {
@@ -118,7 +123,8 @@ model SellerApplication {
   permanentAddress      String?
   documents             String[]
   description           String?
-  sellingCategories     String[]          @default([])
+  categoryId            String?
+  categoryName          String?
   status                ApplicationStatus @default(pending)
   identityVerified      Boolean           @default(false)
   studentStatusVerified Boolean           @default(false)
@@ -137,30 +143,32 @@ model SellerApplication {
 }
 
 model Store {
-  id                String    @id @default(auto()) @map("_id") @db.ObjectId
-  ownerId           String    @unique @db.ObjectId
-  name              String
-  slug              String    @unique
-  description       String?
-  logoUrl           String?
-  bannerUrl         String?
-  mode              StoreMode @default(general)
-  sellingCategories String[]  @default([])
-  location          String?
-  isOpen            Boolean   @default(true)
-  acceptsPickup     Boolean   @default(true)
-  acceptsDelivery   Boolean   @default(false)
-  minimumOrder      Float?
-  deliveryFee       Float     @default(0)
-  prepTimeMin       Int?
-  prepTimeMax       Int?
-  openingHours      Json?
-  foodSafetyNote    String?
-  isActive          Boolean   @default(true)
-  ratingAvg         Float     @default(0)
-  ratingCount       Int       @default(0)
-  createdAt         DateTime  @default(now())
-  updatedAt         DateTime  @updatedAt
+  id              String    @id @default(auto()) @map("_id") @db.ObjectId
+  ownerId         String    @unique @db.ObjectId
+  name            String
+  slug            String    @unique
+  description     String?
+  logoUrl         String?
+  bannerUrl       String?
+  mode            StoreMode @default(general)
+  categoryId      String
+  categoryName    String
+  brandColor      String?
+  location        String?
+  isOpen          Boolean   @default(true)
+  acceptsPickup   Boolean   @default(true)
+  acceptsDelivery Boolean   @default(false)
+  minimumOrder    Float?
+  deliveryFee     Float     @default(0)
+  prepTimeMin     Int?
+  prepTimeMax     Int?
+  openingHours    Json?
+  foodSafetyNote  String?
+  isActive        Boolean   @default(true)
+  ratingAvg       Float     @default(0)
+  ratingCount     Int       @default(0)
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
 
   paymentMethods SellerPaymentMethod[]
   favoritedBy    StoreFavorite[]
@@ -190,6 +198,15 @@ model Coupon {
 
   @@unique([storeId, code])
   @@index([storeId])
+}
+
+// Singleton row — always read/written via findFirst()/its own id, never queried by
+// a business key. Holds the platform's admin-configurable name and logo.
+model PlatformSettings {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  siteName  String   @default("BracuMall")
+  logoUrl   String?
+  updatedAt DateTime @updatedAt
 }
 
 model HeroSlide {
@@ -464,12 +481,13 @@ model Menu {
 }
 
 model Category {
-  id        String   @id @default(auto()) @map("_id") @db.ObjectId
-  name      String   @unique
-  slug      String   @unique
+  id        String    @id @default(auto()) @map("_id") @db.ObjectId
+  name      String    @unique
+  slug      String    @unique
   image     String?
-  isActive  Boolean  @default(true)
-  createdAt DateTime @default(now())
+  mode      StoreMode @default(general)
+  isActive  Boolean   @default(true)
+  createdAt DateTime  @default(now())
 }
 
 model DeliveryLocation {
@@ -641,4 +659,14 @@ model PrivateUpload {
   mimeType     String
   size         Int
   createdAt    DateTime             @default(now())
+}
+
+model PublicUpload {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  ownerId   String   @db.ObjectId
+  purpose   String
+  url       String   @unique
+  createdAt DateTime @default(now())
+
+  @@index([ownerId, purpose])
 }

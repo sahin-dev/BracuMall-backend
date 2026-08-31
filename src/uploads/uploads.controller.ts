@@ -21,10 +21,23 @@ import { PrismaService } from '../prisma/prisma.service';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { Throttle } from '@nestjs/throttler';
 
-const IMAGE_FOLDERS = ['products', 'stores', 'avatars', 'payments', 'hero', 'reviews'];
+const IMAGE_FOLDERS = [
+  'products',
+  'stores',
+  'avatars',
+  'payments',
+  'hero',
+  'reviews',
+  'branding',
+];
 const MAX_IMAGE_SIZE = 5 * 1024 * 1024;
 const MAX_DOCUMENT_SIZE = 10 * 1024 * 1024;
-const ALLOWED_IMAGE_MIMES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
+const ALLOWED_IMAGE_MIMES = [
+  'image/jpeg',
+  'image/png',
+  'image/webp',
+  'image/gif',
+];
 const ALLOWED_DOCUMENT_MIMES = [...ALLOWED_IMAGE_MIMES, 'application/pdf'];
 
 // A spoofed extension/Content-Type passes multer's fileFilter (it only sees
@@ -37,7 +50,9 @@ async function assertRealFileType(
   const { fileTypeFromBuffer } = await import('file-type');
   const detected = await fileTypeFromBuffer(file.buffer);
   if (!detected || !allowedMimes.includes(detected.mime)) {
-    throw new BadRequestException('File content does not match an allowed type');
+    throw new BadRequestException(
+      'File content does not match an allowed type',
+    );
   }
 }
 
@@ -85,6 +100,11 @@ export class UploadsController {
       return { url: `/api/uploads/private/${upload.id}` };
     }
     const url = await this.storage.save(file, `images/${folder}`);
+    if (folder === 'reviews') {
+      await this.prisma.publicUpload.create({
+        data: { ownerId: userId, purpose: 'review_image', url },
+      });
+    }
     return { url };
   }
 

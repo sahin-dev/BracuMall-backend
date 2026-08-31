@@ -32,6 +32,7 @@ import { MessagingModule } from './messaging/messaging.module';
 import { ComplaintsModule } from './complaints/complaints.module';
 import { CouponsModule } from './coupons/coupons.module';
 import { HeroSlidesModule } from './hero-slides/hero-slides.module';
+import { PlatformSettingsModule } from './platform-settings/platform-settings.module';
 import { ApiThrottlerGuard } from './common/guards/api-throttler.guard';
 import { positiveInteger } from './common/rate-limit/rate-limit.util';
 
@@ -92,6 +93,7 @@ import { positiveInteger } from './common/rate-limit/rate-limit.util';
     AdminModule,
     CouponsModule,
     HeroSlidesModule,
+    PlatformSettingsModule,
   ],
   controllers: [AppController],
   providers: [{ provide: APP_GUARD, useClass: ApiThrottlerGuard }],

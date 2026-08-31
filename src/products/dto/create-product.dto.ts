@@ -38,9 +38,6 @@ export class CreateProductDto {
   @IsString({ each: true })
   images?: string[];
 
-  @IsString()
-  categoryId: string;
-
   @IsOptional()
   @IsIn(['general', 'food'])
   productType?: 'general' | 'food';

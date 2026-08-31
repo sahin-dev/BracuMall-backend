@@ -1,5 +1,4 @@
 import {
-  ArrayMinSize,
   IsArray,
   IsDateString,
   IsIn,
@@ -71,10 +70,9 @@ export class CreateApplicationDto {
   @IsString({ each: true })
   documents: string[];
 
-  @IsArray()
-  @ArrayMinSize(1, { message: 'Select at least one category you plan to sell in' })
-  @IsString({ each: true })
-  sellingCategories: string[];
+  @IsString()
+  @IsNotEmpty({ message: 'Select the category you plan to sell in' })
+  categoryId: string;
 
   @IsOptional()
   @IsString()

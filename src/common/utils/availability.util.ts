@@ -32,11 +32,18 @@ type AvailabilityProduct = Pick<
   'name' | 'isActive' | 'soldOutToday' | 'productType' | 'availableDays' | 'availableFrom' | 'availableUntil'
 >;
 
+function hasOwnWindow(product: AvailabilityProduct) {
+  const days = product.availableDays;
+  return Boolean(product.availableFrom || product.availableUntil || (days?.length && days.length < 7));
+}
+
 /**
- * A food item is available when: the item itself isn't sold out, its parent
- * menu (if any) isn't manually switched off and isn't outside its own
- * auto-schedule window, and the item's own window (if set) also matches —
- * the item's window narrows the menu's window, it never widens it.
+ * A food item is available when: the item itself isn't sold out, and its
+ * parent menu (if any) isn't manually switched off ("kitchen is closed"
+ * always wins). Beyond that, a menu's own schedule is only the *default*
+ * for items that don't configure their own hours — an item's own window,
+ * once set, is authoritative and can run narrower or wider than its menu's
+ * default hours (e.g. an item served past its section's normal hours).
  */
 export function isItemAvailableNow(
   menu: Menu | null,
@@ -47,19 +54,21 @@ export function isItemAvailableNow(
   if (product.soldOutToday) return { available: false, reason: `${product.name} is sold out today` };
   if (product.productType !== 'food') return { available: true };
 
-  const { day, time } = campusDayAndTime(at);
-
-  if (menu) {
-    if (!menu.isAvailable) {
-      return { available: false, reason: `${menu.title} is currently unavailable` };
-    }
-    if (menu.autoSchedule && !withinWindow(menu.availableDays, menu.availableFrom, menu.availableUntil, day, time)) {
-      return { available: false, reason: `${menu.title} is not being served at the selected time` };
-    }
+  if (menu && !menu.isAvailable) {
+    return { available: false, reason: `${menu.title} is currently unavailable` };
   }
 
-  if (!withinWindow(product.availableDays, product.availableFrom, product.availableUntil, day, time)) {
-    return { available: false, reason: `${product.name} is not available at the selected time` };
+  const { day, time } = campusDayAndTime(at);
+
+  if (hasOwnWindow(product)) {
+    if (!withinWindow(product.availableDays, product.availableFrom, product.availableUntil, day, time)) {
+      return { available: false, reason: `${product.name} is not available at the selected time` };
+    }
+    return { available: true };
+  }
+
+  if (menu?.autoSchedule && !withinWindow(menu.availableDays, menu.availableFrom, menu.availableUntil, day, time)) {
+    return { available: false, reason: `${menu.title} is not being served at the selected time` };
   }
 
   return { available: true };

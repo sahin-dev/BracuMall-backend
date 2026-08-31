@@ -31,10 +31,25 @@ export class ReviewsController {
   findAll(
     @Query('productId') productId?: string,
     @Query('storeId') storeId?: string,
+    @Query('limit') limit?: string,
+    @Query('skip') skip?: string,
+    @Query('stats') stats?: string,
   ) {
-    if (productId) return this.reviewsService.findForProduct(productId);
-    if (storeId) return this.reviewsService.findForStore(storeId);
+    const take = Math.min(Math.max(Number(limit) || 50, 1), 100);
+    const offset = Math.max(Number(skip) || 0, 0);
+    if (productId)
+      return this.reviewsService.findForProduct(productId, offset, take);
+    if (storeId && stats === 'true')
+      return this.reviewsService.statsForStore(storeId);
+    if (storeId) return this.reviewsService.findForStore(storeId, offset, take);
     throw new BadRequestException('Provide productId or storeId');
+  }
+
+  @Get('my-store')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('seller')
+  findMyStore(@CurrentUser('id') ownerId: string) {
+    return this.reviewsService.findForOwner(ownerId);
   }
 
   @Patch(':id/helpful')

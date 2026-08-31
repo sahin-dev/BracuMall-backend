@@ -1,4 +1,13 @@
-import { IsBoolean, IsIn, IsInt, IsNumber, IsObject, IsOptional, IsString, Min } from 'class-validator';
+import {
+  IsBoolean,
+  IsHexColor,
+  IsInt,
+  IsNumber,
+  IsObject,
+  IsOptional,
+  IsString,
+  Min,
+} from 'class-validator';
 
 export class UpdateStoreDto {
   @IsOptional()
@@ -16,10 +25,6 @@ export class UpdateStoreDto {
   @IsOptional()
   @IsString()
   bannerUrl?: string;
-
-  @IsOptional()
-  @IsIn(['general', 'food', 'hybrid'])
-  mode?: 'general' | 'food' | 'hybrid';
 
   @IsOptional()
   @IsString()
@@ -64,4 +69,8 @@ export class UpdateStoreDto {
   @IsOptional()
   @IsString()
   foodSafetyNote?: string;
+
+  @IsOptional()
+  @IsHexColor()
+  brandColor?: string;
 }

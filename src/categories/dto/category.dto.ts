@@ -1,4 +1,5 @@
-import { IsBoolean, IsOptional, IsString } from 'class-validator';
+import { StoreMode } from '@prisma/client';
+import { IsBoolean, IsEnum, IsOptional, IsString } from 'class-validator';
 
 export class CreateCategoryDto {
   @IsString()
@@ -10,6 +11,10 @@ export class CreateCategoryDto {
   @IsOptional()
   @IsString()
   image?: string;
+
+  @IsOptional()
+  @IsEnum(StoreMode)
+  mode?: StoreMode;
 }
 
 export class UpdateCategoryDto {
@@ -24,6 +29,10 @@ export class UpdateCategoryDto {
   @IsOptional()
   @IsString()
   image?: string;
+
+  @IsOptional()
+  @IsEnum(StoreMode)
+  mode?: StoreMode;
 
   @IsOptional()
   @IsBoolean()

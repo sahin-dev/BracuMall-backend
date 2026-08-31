@@ -1,4 +1,15 @@
-import { IsArray, IsInt, IsOptional, IsString, Max, Min } from 'class-validator';
+import {
+  ArrayMaxSize,
+  ArrayUnique,
+  IsArray,
+  IsInt,
+  IsNotEmpty,
+  IsOptional,
+  IsString,
+  Max,
+  MaxLength,
+  Min,
+} from 'class-validator';
 
 export class CreateReviewDto {
   @IsString()
@@ -14,6 +25,7 @@ export class CreateReviewDto {
 
   @IsOptional()
   @IsString()
+  @MaxLength(2000)
   comment?: string;
 
   @IsOptional()
@@ -48,11 +60,15 @@ export class CreateReviewDto {
 
   @IsOptional()
   @IsArray()
+  @ArrayMaxSize(4)
+  @ArrayUnique()
   @IsString({ each: true })
   images?: string[];
 }
 
 export class ReplyReviewDto {
   @IsString()
+  @IsNotEmpty()
+  @MaxLength(1000)
   message: string;
 }

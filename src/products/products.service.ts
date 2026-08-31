@@ -1,4 +1,5 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
+import { ProductType, StoreMode } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { StoresService } from '../stores/stores.service';
 import { assertOwnership } from '../common/utils/ownership.util';
@@ -13,24 +14,26 @@ export class ProductsService {
 
   async create(dto: any, sellerId: string) {
     const store = await this.storesService.findByOwner(sellerId);
-    this.assertFoodStoreCompatibility(store.mode, dto.productType);
-    this.assertCategoryAllowed(store, dto.categoryId);
-    const category = await this.prisma.category.findUniqueOrThrow({
-      where: { id: dto.categoryId },
-    });
-    if (dto.productType === 'food' && dto.menuId) {
+    const productType = this.defaultProductType(store.mode, dto.productType);
+    this.assertProductTypeAllowed(store.mode, productType);
+    if (productType === ProductType.food && dto.menuId) {
       await this.assertMenuOwnership(store.id, dto.menuId);
     }
-    const preOrderSettings = this.normalizePreOrderSettings(dto);
-    const productSettings = this.normalizeProductSettings(dto);
+    const nextProduct = { ...dto, productType };
+    const preOrderSettings = this.normalizePreOrderSettings(nextProduct);
+    const productSettings = this.normalizeProductSettings(nextProduct);
     return this.prisma.product.create({
       data: {
-        ...dto,
+        ...nextProduct,
         ...preOrderSettings,
         ...productSettings,
         sellerId,
         storeId: store.id,
-        categoryName: category.name,
+        // A product always sells under its store's one category — never
+        // client-selectable, so it can't drift from what the store was
+        // approved to sell.
+        categoryId: store.categoryId,
+        categoryName: store.categoryName,
       },
     });
   }
@@ -105,19 +108,9 @@ export class ProductsService {
       where: { id },
     });
     assertOwnership(product.sellerId === sellerId, 'Not your product');
-    if (dto.categoryId) {
-      const category = await this.prisma.category.findUniqueOrThrow({
-        where: { id: dto.categoryId },
-      });
-      dto.categoryName = category.name;
-    }
     const store = await this.storesService.findByOwner(sellerId);
-    this.assertFoodStoreCompatibility(
-      store.mode,
-      dto.productType ?? product.productType,
-    );
-    this.assertCategoryAllowed(store, dto.categoryId ?? product.categoryId);
     const nextProductType = dto.productType ?? product.productType;
+    this.assertProductTypeAllowed(store.mode, nextProductType);
     if (nextProductType === 'food' && dto.menuId) {
       await this.assertMenuOwnership(store.id, dto.menuId);
     }
@@ -128,6 +121,10 @@ export class ProductsService {
         ...dto,
         ...this.normalizePreOrderSettings(nextProduct),
         ...this.normalizeProductSettings(nextProduct),
+        // A product's category always mirrors its store's single category —
+        // never editable per product, even if a stale value is sent.
+        categoryId: store.categoryId,
+        categoryName: store.categoryName,
       },
     });
   }
@@ -198,27 +195,21 @@ export class ProductsService {
     };
   }
 
-  private assertFoodStoreCompatibility(
-    storeMode: string,
-    productType?: string,
-  ) {
-    if (productType === 'food' && storeMode === 'general') {
-      throw new BadRequestException(
-        'Enable food or hybrid mode in store settings before adding food products',
-      );
-    }
+  private defaultProductType(storeMode: StoreMode, productType?: ProductType) {
+    if (productType) return productType;
+    return storeMode === StoreMode.food
+      ? ProductType.food
+      : ProductType.general;
   }
 
-  private assertCategoryAllowed(
-    store: { sellingCategories: string[] },
-    categoryId?: string,
+  private assertProductTypeAllowed(
+    storeMode: StoreMode,
+    productType: ProductType,
   ) {
-    if (!store.sellingCategories?.length) return;
-    if (!categoryId || !store.sellingCategories.includes(categoryId)) {
-      throw new BadRequestException(
-        "This category isn't enabled for your store. Ask an admin to update your selling categories.",
-      );
-    }
+    if (storeMode === StoreMode.hybrid || storeMode === productType) return;
+    throw new BadRequestException(
+      `Your approved category only allows ${storeMode} products`,
+    );
   }
 
   private async assertMenuOwnership(storeId: string, menuId: string) {

@@ -7,7 +7,8 @@ import {
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { JwtService } from '@nestjs/jwt';
+import { JwtService, type JwtSignOptions } from '@nestjs/jwt';
+import { UserRole, type User } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 import * as nodemailer from 'nodemailer';
 import { randomInt } from 'crypto';
@@ -16,6 +17,25 @@ import { PrismaService } from '../prisma/prisma.service';
 const EMAIL_OTP_TTL_MINUTES = 10;
 const EMAIL_OTP_RESEND_SECONDS = 60;
 const EMAIL_OTP_MAX_ATTEMPTS = 5;
+const PASSWORD_RESET_RESPONSE =
+  'If an eligible account exists, a password reset code has been sent';
+
+type TokenUser = Pick<
+  User,
+  | 'id'
+  | 'email'
+  | 'name'
+  | 'role'
+  | 'isApproved'
+  | 'isEmailVerified'
+  | 'sessionVersion'
+>;
+
+type AuthTokenPayload = {
+  sub: string;
+  tokenType: 'access' | 'refresh';
+  sessionVersion?: number;
+};
 
 @Injectable()
 export class AuthService {
@@ -29,7 +49,7 @@ export class AuthService {
     email: string,
     password: string,
     name: string,
-    role: string = 'buyer',
+    role: UserRole = UserRole.buyer,
   ) {
     email = this.normalizeEmail(email);
     const existing = await this.prisma.user.findUnique({ where: { email } });
@@ -41,7 +61,7 @@ export class AuthService {
         email,
         password: hashedPassword,
         name,
-        role: role as any,
+        role,
         emailOtpHash: await bcrypt.hash(otp, 10),
         emailOtpExpiresAt: this.otpExpiry(),
         emailOtpSentAt: new Date(),
@@ -57,7 +77,9 @@ export class AuthService {
     const user = await this.prisma.user.findUnique({ where: { email } });
     if (!user) throw new UnauthorizedException('Invalid credentials');
     if (user.lockedUntil && user.lockedUntil.getTime() > Date.now()) {
-      throw new UnauthorizedException('Account is temporarily locked. Try again later');
+      throw new UnauthorizedException(
+        'Account is temporarily locked. Try again later',
+      );
     }
     const valid = await bcrypt.compare(password, user.password);
     if (!valid) {
@@ -66,7 +88,8 @@ export class AuthService {
         where: { id: user.id },
         data: {
           failedLoginAttempts: attempts >= 5 ? 0 : attempts,
-          lockedUntil: attempts >= 5 ? new Date(Date.now() + 15 * 60 * 1000) : null,
+          lockedUntil:
+            attempts >= 5 ? new Date(Date.now() + 15 * 60 * 1000) : null,
         },
       });
       throw new UnauthorizedException('Invalid credentials');
@@ -78,10 +101,15 @@ export class AuthService {
       });
     }
     if (!user.isEmailVerified) {
-      if (!user.emailOtpExpiresAt || user.emailOtpExpiresAt.getTime() < Date.now()) {
+      if (
+        !user.emailOtpExpiresAt ||
+        user.emailOtpExpiresAt.getTime() < Date.now()
+      ) {
         await this.issueOtp(user);
       }
-      throw new ForbiddenException(this.verificationRequiredResponse(user.email));
+      throw new ForbiddenException(
+        this.verificationRequiredResponse(user.email),
+      );
     }
     return this.generateTokens(user);
   }
@@ -98,7 +126,9 @@ export class AuthService {
       throw new BadRequestException('Verification code expired');
     }
     if (user.emailOtpAttempts >= EMAIL_OTP_MAX_ATTEMPTS) {
-      throw new BadRequestException('Too many attempts. Request a new verification code');
+      throw new BadRequestException(
+        'Too many attempts. Request a new verification code',
+      );
     }
     const valid = await bcrypt.compare(otp, user.emailOtpHash);
     if (!valid) {
@@ -135,13 +165,117 @@ export class AuthService {
     return this.verificationRequiredResponse(user.email);
   }
 
-  private generateTokens(user: any) {
-    const payload = { sub: user.id, email: user.email, role: user.role };
+  async forgotPassword(email: string) {
+    email = this.normalizeEmail(email);
+    const response = { message: PASSWORD_RESET_RESPONSE };
+    const user = await this.prisma.user.findUnique({ where: { email } });
+
+    // Always return the same response so this endpoint cannot be used to
+    // discover which email addresses have accounts.
+    if (!user?.isEmailVerified) return response;
+    if (
+      user.passwordResetOtpSentAt &&
+      Date.now() - user.passwordResetOtpSentAt.getTime() <
+        EMAIL_OTP_RESEND_SECONDS * 1000
+    ) {
+      return response;
+    }
+
+    const otp = this.createOtp();
+    await this.prisma.user.update({
+      where: { id: user.id },
+      data: {
+        passwordResetOtpHash: await bcrypt.hash(otp, 10),
+        passwordResetOtpExpiresAt: this.otpExpiry(),
+        passwordResetOtpSentAt: new Date(),
+        passwordResetOtpAttempts: 0,
+      },
+    });
+
+    try {
+      await this.sendPasswordResetOtp(user.email, otp);
+    } catch (error) {
+      // Keep the public response indistinguishable from an unknown account.
+      console.error('[password-reset] Could not deliver reset code', error);
+      await this.prisma.user.update({
+        where: { id: user.id },
+        data: {
+          passwordResetOtpHash: null,
+          passwordResetOtpExpiresAt: null,
+          passwordResetOtpSentAt: null,
+          passwordResetOtpAttempts: 0,
+        },
+      });
+    }
+
+    return response;
+  }
+
+  async resetPassword(email: string, otp: string, newPassword: string) {
+    email = this.normalizeEmail(email);
+    const user = await this.prisma.user.findUnique({ where: { email } });
+    const invalidCode = () =>
+      new BadRequestException('Invalid or expired password reset code');
+
+    if (
+      !user?.isEmailVerified ||
+      !user.passwordResetOtpHash ||
+      !user.passwordResetOtpExpiresAt
+    ) {
+      throw invalidCode();
+    }
+    if (user.passwordResetOtpExpiresAt.getTime() < Date.now()) {
+      throw invalidCode();
+    }
+    if (user.passwordResetOtpAttempts >= EMAIL_OTP_MAX_ATTEMPTS) {
+      throw new BadRequestException(
+        'Too many attempts. Request a new password reset code',
+      );
+    }
+
+    const valid = await bcrypt.compare(otp, user.passwordResetOtpHash);
+    if (!valid) {
+      await this.prisma.user.update({
+        where: { id: user.id },
+        data: { passwordResetOtpAttempts: { increment: 1 } },
+      });
+      throw invalidCode();
+    }
+
+    await this.prisma.user.update({
+      where: { id: user.id },
+      data: {
+        password: await bcrypt.hash(newPassword, 12),
+        passwordResetOtpHash: null,
+        passwordResetOtpExpiresAt: null,
+        passwordResetOtpSentAt: null,
+        passwordResetOtpAttempts: 0,
+        failedLoginAttempts: 0,
+        lockedUntil: null,
+        sessionVersion: { increment: 1 },
+      },
+    });
+
+    return { message: 'Password reset successfully' };
+  }
+
+  private generateTokens(user: TokenUser) {
+    const payload = {
+      sub: user.id,
+      email: user.email,
+      role: user.role,
+      sessionVersion: Number(user.sessionVersion ?? 0),
+    };
     return {
       access_token: this.jwtService.sign({ ...payload, tokenType: 'access' }),
       refresh_token: this.jwtService.sign(
         { ...payload, tokenType: 'refresh' },
-        { expiresIn: this.config.get<string>('jwt.refreshExpiresIn', '7d') as any },
+        {
+          expiresIn: this.config.get<string>(
+            'jwt.refreshExpiresIn',
+            '7d',
+          ) as JwtSignOptions['expiresIn'],
+        },
       ),
       user: {
         id: user.id,
@@ -156,14 +290,22 @@ export class AuthService {
 
   async refreshToken(token: string) {
     try {
-      const payload = this.jwtService.verify(token);
+      const payload = this.jwtService.verify<AuthTokenPayload>(token);
       if (payload.tokenType !== 'refresh')
         throw new UnauthorizedException('Invalid refresh token');
       const user = await this.prisma.user.findUnique({
         where: { id: payload.sub },
       });
       if (!user) throw new UnauthorizedException('User not found');
-      if (!user.isEmailVerified) throw new UnauthorizedException('Email not verified');
+      if (user.isSuspended)
+        throw new UnauthorizedException('Account suspended');
+      if (!user.isEmailVerified)
+        throw new UnauthorizedException('Email not verified');
+      if (
+        Number(payload.sessionVersion ?? 0) !== Number(user.sessionVersion ?? 0)
+      ) {
+        throw new UnauthorizedException('Session expired');
+      }
       return this.generateTokens(user);
     } catch {
       throw new UnauthorizedException('Invalid refresh token');
@@ -189,7 +331,8 @@ export class AuthService {
   }) {
     if (
       user.emailOtpSentAt &&
-      Date.now() - user.emailOtpSentAt.getTime() < EMAIL_OTP_RESEND_SECONDS * 1000
+      Date.now() - user.emailOtpSentAt.getTime() <
+        EMAIL_OTP_RESEND_SECONDS * 1000
     ) {
       throw new BadRequestException(
         `Wait ${EMAIL_OTP_RESEND_SECONDS} seconds before requesting another code`,
@@ -217,6 +360,18 @@ export class AuthService {
   }
 
   private async sendEmailOtp(email: string, otp: string) {
+    return this.sendOtpEmail(email, otp, 'verification');
+  }
+
+  private async sendPasswordResetOtp(email: string, otp: string) {
+    return this.sendOtpEmail(email, otp, 'password-reset');
+  }
+
+  private async sendOtpEmail(
+    email: string,
+    otp: string,
+    purpose: 'verification' | 'password-reset',
+  ) {
     const host = this.config.get<string>('SMTP_HOST');
     const from =
       this.config.get<string>('SMTP_FROM') ||
@@ -226,7 +381,7 @@ export class AuthService {
     if (!host || !from) {
       if (this.config.get<string>('NODE_ENV') !== 'production') {
         console.log(
-          `[email-verification] SMTP is not configured. OTP for ${email}: ${otp}`,
+          `[email-${purpose}] SMTP is not configured. OTP for ${email}: ${otp}`,
         );
         return;
       }
@@ -235,10 +390,7 @@ export class AuthService {
 
     const port = Number(this.config.get<string>('SMTP_PORT') || 587);
     const smtpSecure = this.config.get<string>('SMTP_SECURE');
-    const secure =
-      smtpSecure === 'true' ||
-      smtpSecure === '1' ||
-      port === 465;
+    const secure = smtpSecure === 'true' || smtpSecure === '1' || port === 465;
     const user = this.config.get<string>('SMTP_USER');
     const pass = this.config.get<string>('SMTP_PASS');
 
@@ -250,15 +402,25 @@ export class AuthService {
     });
 
     try {
+      const isPasswordReset = purpose === 'password-reset';
+      const subject = isPasswordReset
+        ? 'Reset your BracUMan password'
+        : 'Your BracUMan verification code';
+      const heading = isPasswordReset
+        ? 'Reset your BracUMan password'
+        : 'Verify your BracUMan account';
+      const description = isPasswordReset
+        ? 'Your password reset code is:'
+        : 'Your verification code is:';
       await transporter.sendMail({
         from,
         to: email,
-        subject: 'Your BracUMan verification code',
-        text: `Your BracUMan verification code is ${otp}. It expires in ${EMAIL_OTP_TTL_MINUTES} minutes.`,
+        subject,
+        text: `${description} ${otp}. It expires in ${EMAIL_OTP_TTL_MINUTES} minutes.`,
         html: `
           <div style="font-family: Arial, sans-serif; line-height: 1.5; color: #0f172a;">
-            <h2 style="margin: 0 0 12px;">Verify your BracUMan account</h2>
-            <p>Your verification code is:</p>
+            <h2 style="margin: 0 0 12px;">${heading}</h2>
+            <p>${description}</p>
             <p style="font-size: 28px; font-weight: 700; letter-spacing: 6px; margin: 16px 0;">${otp}</p>
             <p>This code expires in ${EMAIL_OTP_TTL_MINUTES} minutes.</p>
             <p>If you did not request this code, you can ignore this email.</p>
@@ -266,8 +428,8 @@ export class AuthService {
         `,
       });
     } catch (error) {
-      console.error('[email-verification] Failed to send OTP email', error);
-      throw new ServiceUnavailableException('Could not send verification email');
+      console.error(`[email-${purpose}] Failed to send OTP email`, error);
+      throw new ServiceUnavailableException('Could not send email');
     }
   }
 }

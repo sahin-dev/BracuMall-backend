@@ -16,6 +16,7 @@ import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
 import { VerifyEmailDto } from './dto/verify-email.dto';
 import { ResendEmailOtpDto } from './dto/resend-email-otp.dto';
+import { ForgotPasswordDto, ResetPasswordDto } from './dto/password-reset.dto';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { Throttle } from '@nestjs/throttler';
@@ -25,7 +26,12 @@ import {
   setAuthCookies,
 } from '../common/utils/auth-cookies.util';
 
-type AuthResult = { access_token: string; refresh_token: string; user: unknown };
+type AuthResult = {
+  access_token: string;
+  refresh_token: string;
+  user: unknown;
+};
+type SessionUser = Record<string, unknown>;
 
 @Controller('auth')
 export class AuthController {
@@ -47,7 +53,10 @@ export class AuthController {
   @Post('login')
   @Throttle({ default: { limit: 10, ttl: 60_000, blockDuration: 60_000 } })
   @HttpCode(HttpStatus.OK)
-  async login(@Body() dto: LoginDto, @Res({ passthrough: true }) res: Response) {
+  async login(
+    @Body() dto: LoginDto,
+    @Res({ passthrough: true }) res: Response,
+  ) {
     const result = await this.authService.login(dto.email, dto.password);
     return this.respondWithSession(res, result);
   }
@@ -57,7 +66,10 @@ export class AuthController {
     default: { limit: 10, ttl: 10 * 60_000, blockDuration: 10 * 60_000 },
   })
   @HttpCode(HttpStatus.OK)
-  async verifyEmail(@Body() dto: VerifyEmailDto, @Res({ passthrough: true }) res: Response) {
+  async verifyEmail(
+    @Body() dto: VerifyEmailDto,
+    @Res({ passthrough: true }) res: Response,
+  ) {
     const result = await this.authService.verifyEmail(dto.email, dto.otp);
     return this.respondWithSession(res, result);
   }
@@ -71,12 +83,44 @@ export class AuthController {
     return this.authService.resendEmailOtp(dto.email);
   }
 
+  @Post('forgot-password')
+  @Throttle({
+    default: { limit: 5, ttl: 15 * 60_000, blockDuration: 15 * 60_000 },
+  })
+  @HttpCode(HttpStatus.OK)
+  forgotPassword(@Body() dto: ForgotPasswordDto) {
+    return this.authService.forgotPassword(dto.email);
+  }
+
+  @Post('reset-password')
+  @Throttle({
+    default: { limit: 10, ttl: 15 * 60_000, blockDuration: 15 * 60_000 },
+  })
+  @HttpCode(HttpStatus.OK)
+  async resetPassword(
+    @Body() dto: ResetPasswordDto,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const result = await this.authService.resetPassword(
+      dto.email,
+      dto.otp,
+      dto.newPassword,
+    );
+    clearAuthCookies(res);
+    return result;
+  }
+
   @Post('refresh')
   @Throttle({ default: { limit: 30, ttl: 60_000, blockDuration: 60_000 } })
   @HttpCode(HttpStatus.OK)
-  async refresh(@Req() req: Request, @Res({ passthrough: true }) res: Response) {
-    const token = req.cookies?.[REFRESH_TOKEN_COOKIE];
-    if (!token) throw new UnauthorizedException('Invalid refresh token');
+  async refresh(
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const cookies = req.cookies as Record<string, unknown> | undefined;
+    const token = cookies?.[REFRESH_TOKEN_COOKIE];
+    if (typeof token !== 'string')
+      throw new UnauthorizedException('Invalid refresh token');
     const result = await this.authService.refreshToken(token);
     return this.respondWithSession(res, result);
   }
@@ -90,7 +134,7 @@ export class AuthController {
 
   @Get('me')
   @UseGuards(JwtAuthGuard)
-  me(@CurrentUser() user: any) {
+  me(@CurrentUser() user: SessionUser) {
     return user;
   }
 }

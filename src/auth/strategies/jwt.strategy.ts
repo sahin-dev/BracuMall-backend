@@ -6,8 +6,16 @@ import type { Request } from 'express';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ACCESS_TOKEN_COOKIE } from '../../common/utils/auth-cookies.util';
 
+type AccessTokenPayload = {
+  sub: string;
+  tokenType: 'access' | 'refresh';
+  sessionVersion?: number;
+};
+
 function cookieExtractor(req: Request): string | null {
-  return req?.cookies?.[ACCESS_TOKEN_COOKIE] || null;
+  const cookies = req.cookies as Record<string, unknown> | undefined;
+  const token = cookies?.[ACCESS_TOKEN_COOKIE];
+  return typeof token === 'string' ? token : null;
 }
 
 @Injectable()
@@ -28,7 +36,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     });
   }
 
-  async validate(payload: any) {
+  async validate(payload: AccessTokenPayload) {
     if (payload.tokenType !== 'access')
       throw new UnauthorizedException('Invalid access token');
     const user = await this.prisma.user.findUnique({
@@ -36,7 +44,13 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     });
     if (!user) return null;
     if (user.isSuspended) throw new UnauthorizedException('Account suspended');
-    if (!user.isEmailVerified) throw new UnauthorizedException('Email not verified');
+    if (!user.isEmailVerified)
+      throw new UnauthorizedException('Email not verified');
+    if (
+      Number(payload.sessionVersion ?? 0) !== Number(user.sessionVersion ?? 0)
+    ) {
+      throw new UnauthorizedException('Session expired');
+    }
     return {
       id: user.id,
       email: user.email,

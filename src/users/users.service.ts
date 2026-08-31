@@ -80,13 +80,6 @@ export class UsersService implements OnModuleInit {
   update(id: string, data: any) {
     return this.prisma.user.update({ where: { id }, data });
   }
-  approveSeller(id: string) {
-    return this.prisma.user.update({
-      where: { id },
-      data: { isApproved: true, role: 'seller' },
-    });
-  }
-
   async updateProfile(
     id: string,
     data: {
