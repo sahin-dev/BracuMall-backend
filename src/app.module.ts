@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
+import { AppController } from './app.controller';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { JwtModule } from '@nestjs/jwt';
 import { ThrottlerModule } from '@nestjs/throttler';
@@ -92,6 +93,7 @@ import { positiveInteger } from './common/rate-limit/rate-limit.util';
     CouponsModule,
     HeroSlidesModule,
   ],
+  controllers: [AppController],
   providers: [{ provide: APP_GUARD, useClass: ApiThrottlerGuard }],
 })
 export class AppModule {}
