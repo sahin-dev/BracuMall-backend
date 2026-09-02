@@ -8,9 +8,9 @@ import {
 
 export class RegisterDto {
   @IsEmail()
-  // @Matches(/@bracu\.ac\.bd$/i, {
-  //   message: 'Use your BRAC University email address',
-  // })
+  @Matches(/@g\.bracu\.ac\.bd$/i, {
+    message: 'Use your BRAC University student email address (@g.bracu.ac.bd)',
+  })
   email: string;
 
   @IsString()
