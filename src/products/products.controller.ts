@@ -16,6 +16,7 @@ import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
+import { Permissions } from '../common/decorators/permissions.decorator';
 
 @Controller('products')
 export class ProductsController {
@@ -43,6 +44,7 @@ export class ProductsController {
   @Get('admin/all')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('admin')
+  @Permissions('catalog.read')
   findAllAdmin() {
     return this.productsService.findAllAdmin();
   }
@@ -50,6 +52,7 @@ export class ProductsController {
   @Patch(':id/activate')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('admin')
+  @Permissions('catalog.manage')
   activate(@Param('id') id: string) {
     return this.productsService.setActiveByAdmin(id, true);
   }
@@ -57,6 +60,7 @@ export class ProductsController {
   @Patch(':id/deactivate')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('admin')
+  @Permissions('catalog.manage')
   deactivate(@Param('id') id: string) {
     return this.productsService.setActiveByAdmin(id, false);
   }

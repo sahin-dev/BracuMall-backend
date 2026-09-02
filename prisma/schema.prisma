@@ -31,6 +31,48 @@ enum ProductCondition {
   fair
 }
 
+enum CategoryFilterType {
+  general
+  food
+  clothing
+}
+
+enum FoodMealType {
+  breakfast
+  lunch
+  dinner
+  snacks
+  desserts
+  drinks
+}
+
+enum SpiceLevel {
+  mild
+  medium
+  hot
+}
+
+enum ClothingType {
+  tshirt
+  shirt
+  trousers
+  jeans
+  dress
+  skirt
+  outerwear
+  sportswear
+  footwear
+  accessories
+  other
+}
+
+enum ClothingAudience {
+  men
+  women
+  unisex
+  kids
+}
+
 enum FulfillmentType {
   pickup
   delivery
@@ -65,6 +107,8 @@ model User {
   name                      String
   password                  String
   role                      UserRole            @default(buyer)
+  accessRoleId              String?             @db.ObjectId
+  accessRole                AccessRole?         @relation(fields: [accessRoleId], references: [id])
   isApproved                Boolean             @default(false)
   isEmailVerified           Boolean?            @default(false)
   emailVerifiedAt           DateTime?
@@ -95,6 +139,23 @@ model User {
   storeFavorites            StoreFavorite[]
   reviews                   Review[]
   donations                 Donation[]
+
+  @@index([accessRoleId])
+}
+
+model AccessRole {
+  id          String   @id @default(auto()) @map("_id") @db.ObjectId
+  name        String   @unique
+  slug        String   @unique
+  description String?
+  accountType UserRole
+  permissions String[] @default([])
+  isSystem    Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  users       User[]
+
+  @@index([accountType])
 }
 
 enum ApplicationStatus {
@@ -143,36 +204,42 @@ model SellerApplication {
 }
 
 model Store {
-  id              String    @id @default(auto()) @map("_id") @db.ObjectId
-  ownerId         String    @unique @db.ObjectId
-  name            String
-  slug            String    @unique
-  description     String?
-  logoUrl         String?
-  bannerUrl       String?
-  mode            StoreMode @default(general)
-  categoryId      String
-  categoryName    String
-  brandColor      String?
-  location        String?
-  isOpen          Boolean   @default(true)
-  acceptsPickup   Boolean   @default(true)
-  acceptsDelivery Boolean   @default(false)
-  minimumOrder    Float?
-  deliveryFee     Float     @default(0)
-  prepTimeMin     Int?
-  prepTimeMax     Int?
-  openingHours    Json?
-  foodSafetyNote  String?
-  isActive        Boolean   @default(true)
-  ratingAvg       Float     @default(0)
-  ratingCount     Int       @default(0)
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
+  id                     String    @id @default(auto()) @map("_id") @db.ObjectId
+  ownerId                String    @db.ObjectId
+  name                   String
+  slug                   String    @unique
+  description            String?
+  logoUrl                String?
+  bannerUrl              String?
+  mode                   StoreMode @default(general)
+  categoryId             String
+  categoryName           String
+  brandColor             String?
+  location               String?
+  isOpen                 Boolean   @default(true)
+  acceptsPickup          Boolean   @default(true)
+  acceptsDelivery        Boolean   @default(false)
+  minimumOrder           Float?
+  deliveryFee            Float     @default(0)
+  prepTimeMin            Int?
+  prepTimeMax            Int?
+  openingHours           Json?
+  foodSafetyNote         String?
+  isActive               Boolean   @default(true)
+  ratingAvg              Float     @default(0)
+  ratingCount            Int       @default(0)
+  isAdminManaged         Boolean   @default(false)
+  postpaidDepositPercent Float?
+  createdByAdminId       String?   @db.ObjectId
+  createdAt              DateTime  @default(now())
+  updatedAt              DateTime  @updatedAt
 
   paymentMethods SellerPaymentMethod[]
   favoritedBy    StoreFavorite[]
   coupons        Coupon[]
+
+  @@index([ownerId])
+  @@index([isAdminManaged])
 }
 
 enum CouponDiscountType {
@@ -203,10 +270,11 @@ model Coupon {
 // Singleton row — always read/written via findFirst()/its own id, never queried by
 // a business key. Holds the platform's admin-configurable name and logo.
 model PlatformSettings {
-  id        String   @id @default(auto()) @map("_id") @db.ObjectId
-  siteName  String   @default("BracuMall")
-  logoUrl   String?
-  updatedAt DateTime @updatedAt
+  id                             String   @id @default(auto()) @map("_id") @db.ObjectId
+  siteName                       String   @default("BracuMall")
+  logoUrl                        String?
+  defaultPostpaidDepositPercent  Float    @default(20)
+  updatedAt                      DateTime @updatedAt
 }
 
 model HeroSlide {
@@ -430,6 +498,15 @@ model Product {
   categoryName          String?
   productType           ProductType          @default(general)
   condition             ProductCondition?
+  mealType              FoodMealType?
+  cuisine               String?
+  spiceLevel            SpiceLevel?
+  clothingType          ClothingType?
+  clothingAudience      ClothingAudience?
+  sizes                 String[]             @default([])
+  colors                String[]             @default([])
+  brand                 String?
+  material              String?
   isNegotiable          Boolean              @default(false)
   meetupLocation        String?
   stock                 Int                  @default(0)
@@ -437,6 +514,7 @@ model Product {
   preOrderDeadline      DateTime?
   preOrderPaymentType   PreOrderPaymentType? @default(postpaid)
   preOrderDepositAmount Float?
+  preOrderPostpaidDepositPercent Float?
   preOrderLimit         Int?
   menuId                String?
   menuSection           String?
@@ -454,6 +532,7 @@ model Product {
   totalSold             Int                  @default(0)
   ratingAvg             Float                @default(0)
   ratingCount           Int                  @default(0)
+  isAdminManaged        Boolean              @default(false)
   createdAt             DateTime             @default(now())
   updatedAt             DateTime             @updatedAt
 
@@ -461,6 +540,7 @@ model Product {
   @@index([storeId])
   @@index([categoryId])
   @@index([isActive])
+  @@index([isAdminManaged])
 }
 
 model Menu {
@@ -481,13 +561,14 @@ model Menu {
 }
 
 model Category {
-  id        String    @id @default(auto()) @map("_id") @db.ObjectId
-  name      String    @unique
-  slug      String    @unique
-  image     String?
-  mode      StoreMode @default(general)
-  isActive  Boolean   @default(true)
-  createdAt DateTime  @default(now())
+  id         String             @id @default(auto()) @map("_id") @db.ObjectId
+  name       String             @unique
+  slug       String             @unique
+  image      String?
+  mode       StoreMode          @default(general)
+  filterType CategoryFilterType @default(general)
+  isActive   Boolean            @default(true)
+  createdAt  DateTime           @default(now())
 }
 
 model DeliveryLocation {
@@ -659,6 +740,18 @@ model PrivateUpload {
   mimeType     String
   size         Int
   createdAt    DateTime             @default(now())
+}
+
+// One row per distinct browser (matched by a client-generated id kept in
+// localStorage), not one row per page view — that's what makes "total
+// visitors" a cheap count() query no matter how much traffic the site gets.
+model Visitor {
+  id          String   @id @default(auto()) @map("_id") @db.ObjectId
+  visitorId   String   @unique
+  userId      String?  @db.ObjectId
+  visitCount  Int      @default(1)
+  firstSeenAt DateTime @default(now())
+  lastSeenAt  DateTime @default(now())
 }
 
 model PublicUpload {

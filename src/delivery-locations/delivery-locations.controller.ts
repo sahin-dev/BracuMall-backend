@@ -16,6 +16,7 @@ import {
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
+import { Permissions } from '../common/decorators/permissions.decorator';
 
 @Controller('delivery-locations')
 export class DeliveryLocationsController {
@@ -24,6 +25,7 @@ export class DeliveryLocationsController {
   @Post()
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('admin')
+  @Permissions('delivery_locations.manage')
   create(@Body() dto: CreateDeliveryLocationDto) {
     return this.locationsService.create(dto);
   }
@@ -36,6 +38,7 @@ export class DeliveryLocationsController {
   @Get('all')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('admin')
+  @Permissions('delivery_locations.read')
   findAllAdmin() {
     return this.locationsService.findAllAdmin();
   }
@@ -43,6 +46,7 @@ export class DeliveryLocationsController {
   @Patch(':id')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('admin')
+  @Permissions('delivery_locations.manage')
   update(@Param('id') id: string, @Body() dto: UpdateDeliveryLocationDto) {
     return this.locationsService.update(id, dto);
   }
@@ -50,6 +54,7 @@ export class DeliveryLocationsController {
   @Delete(':id')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('admin')
+  @Permissions('delivery_locations.manage')
   remove(@Param('id') id: string) {
     return this.locationsService.remove(id);
   }

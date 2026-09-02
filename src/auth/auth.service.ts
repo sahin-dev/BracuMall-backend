@@ -29,7 +29,9 @@ type TokenUser = Pick<
   | 'isApproved'
   | 'isEmailVerified'
   | 'sessionVersion'
->;
+> & {
+  accessRole?: { id: string; name: string; accountType: UserRole; permissions: string[] } | null;
+};
 
 type AuthTokenPayload = {
   sub: string;
@@ -56,12 +58,16 @@ export class AuthService {
     if (existing) throw new ConflictException('Email already registered');
     const hashedPassword = await bcrypt.hash(password, 12);
     const otp = this.createOtp();
+    const accessRole = await this.prisma.accessRole.findUnique({
+      where: { slug: role === UserRole.admin ? 'administrator' : role },
+    });
     const user = await this.prisma.user.create({
       data: {
         email,
         password: hashedPassword,
         name,
         role,
+        accessRoleId: accessRole?.id,
         emailOtpHash: await bcrypt.hash(otp, 10),
         emailOtpExpiresAt: this.otpExpiry(),
         emailOtpSentAt: new Date(),
@@ -74,7 +80,7 @@ export class AuthService {
 
   async login(email: string, password: string) {
     email = this.normalizeEmail(email);
-    const user = await this.prisma.user.findUnique({ where: { email } });
+    const user = await this.prisma.user.findUnique({ where: { email }, include: { accessRole: true } });
     if (!user) throw new UnauthorizedException('Invalid credentials');
     if (user.lockedUntil && user.lockedUntil.getTime() > Date.now()) {
       throw new UnauthorizedException(
@@ -148,6 +154,7 @@ export class AuthService {
         emailOtpExpiresAt: null,
         emailOtpAttempts: 0,
       },
+      include: { accessRole: true },
     });
 
     return this.generateTokens(verifiedUser);
@@ -284,6 +291,10 @@ export class AuthService {
         role: user.role,
         isApproved: user.isApproved,
         isEmailVerified: Boolean(user.isEmailVerified),
+        accessRole: user.accessRole
+          ? { id: user.accessRole.id, name: user.accessRole.name, accountType: user.accessRole.accountType }
+          : null,
+        permissions: user.accessRole?.permissions ?? (user.role === UserRole.admin ? ['*'] : []),
       },
     };
   }
@@ -295,6 +306,7 @@ export class AuthService {
         throw new UnauthorizedException('Invalid refresh token');
       const user = await this.prisma.user.findUnique({
         where: { id: payload.sub },
+        include: { accessRole: true },
       });
       if (!user) throw new UnauthorizedException('User not found');
       if (user.isSuspended)

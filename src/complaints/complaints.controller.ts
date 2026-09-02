@@ -6,6 +6,7 @@ import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
+import { Permissions } from '../common/decorators/permissions.decorator';
 
 @Controller('complaints')
 @UseGuards(JwtAuthGuard)
@@ -25,11 +26,15 @@ export class ComplaintsController {
   @Get()
   @UseGuards(RolesGuard)
   @Roles('admin')
+  @Permissions('complaints.read')
   findAll(@Query('status') status?: string) {
     return this.complaintsService.findAll(status);
   }
 
   @Get(':id')
+  @UseGuards(RolesGuard)
+  @Roles('buyer', 'seller', 'admin')
+  @Permissions('complaints.read')
   findOne(
     @Param('id') id: string,
     @CurrentUser('id') userId: string,
@@ -41,6 +46,7 @@ export class ComplaintsController {
   @Patch(':id/status')
   @UseGuards(RolesGuard)
   @Roles('admin')
+  @Permissions('complaints.manage')
   updateStatus(@Param('id') id: string, @Body() dto: UpdateComplaintStatusDto, @CurrentUser('id') adminId: string) {
     return this.complaintsService.updateStatus(id, dto, adminId);
   }

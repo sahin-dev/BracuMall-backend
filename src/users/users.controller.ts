@@ -3,6 +3,7 @@ import { UsersService } from './users.service';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
+import { Permissions } from '../common/decorators/permissions.decorator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { ChangePasswordDto, UpdateProfileDto } from './dto/account.dto';
 
@@ -38,6 +39,7 @@ export class UsersController {
   @Get()
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('admin')
+  @Permissions('users.read')
   findAll() {
     return this.usersService.findAll();
   }
@@ -45,6 +47,7 @@ export class UsersController {
   @Get(':id')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('admin')
+  @Permissions('users.read')
   findOne(@Param('id') id: string) {
     return this.usersService.findById(id);
   }

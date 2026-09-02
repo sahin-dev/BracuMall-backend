@@ -58,3 +58,21 @@ describe('StoresService category changes', () => {
     });
   });
 });
+
+describe('StoresService.findAllActive', () => {
+  it('filters by category and boosts admin-managed stores within the requested sort', async () => {
+    const prisma = {
+      store: { findMany: jest.fn().mockResolvedValue([]), count: jest.fn() },
+    };
+    const service = new StoresService(prisma as unknown as PrismaService);
+
+    await service.findAllActive({ categoryId: 'food', sort: 'name:asc' });
+
+    expect(prisma.store.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { isActive: true, categoryId: 'food' },
+        orderBy: [{ isAdminManaged: 'desc' }, { name: 'asc' }],
+      }),
+    );
+  });
+});

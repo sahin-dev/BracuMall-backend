@@ -6,6 +6,7 @@ import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
+import { Permissions } from '../common/decorators/permissions.decorator';
 
 @Controller('stores')
 export class StoresController {
@@ -19,6 +20,7 @@ export class StoresController {
   @Get('admin/all')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('admin')
+  @Permissions('catalog.read')
   findAllAdmin() {
     return this.storesService.findAllAdmin();
   }
@@ -40,6 +42,7 @@ export class StoresController {
   @Patch(':id/activate')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('admin')
+  @Permissions('catalog.manage')
   activate(@Param('id') id: string) {
     return this.storesService.setActive(id, true);
   }
@@ -47,6 +50,7 @@ export class StoresController {
   @Patch(':id/deactivate')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('admin')
+  @Permissions('catalog.manage')
   deactivate(@Param('id') id: string) {
     return this.storesService.setActive(id, false);
   }
@@ -54,6 +58,7 @@ export class StoresController {
   @Patch(':id/selling-categories')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('admin')
+  @Permissions('catalog.manage')
   updateSellingCategories(
     @Param('id') id: string,
     @Body() dto: UpdateSellingCategoriesDto,

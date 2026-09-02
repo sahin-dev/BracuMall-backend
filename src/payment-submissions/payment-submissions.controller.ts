@@ -17,6 +17,7 @@ import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
+import { Permissions } from '../common/decorators/permissions.decorator';
 
 @Controller('payment-submissions')
 @UseGuards(JwtAuthGuard)
@@ -34,6 +35,9 @@ export class PaymentSubmissionsController {
   }
 
   @Get()
+  @UseGuards(RolesGuard)
+  @Roles('buyer', 'seller', 'admin')
+  @Permissions('finance.read')
   findFor(
     @Query('orderId') orderId: string,
     @Query('preOrderId') preOrderId: string,
@@ -49,6 +53,9 @@ export class PaymentSubmissionsController {
   }
 
   @Patch(':id/verify')
+  @UseGuards(RolesGuard)
+  @Roles('seller', 'admin')
+  @Permissions('finance.manage')
   verify(
     @Param('id') id: string,
     @Body() dto: VerifyPaymentSubmissionDto,

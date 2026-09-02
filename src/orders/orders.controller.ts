@@ -14,6 +14,7 @@ import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
+import { Permissions } from '../common/decorators/permissions.decorator';
 
 @Controller('orders')
 export class OrdersController {
@@ -53,12 +54,15 @@ export class OrdersController {
   @Get()
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('admin')
+  @Permissions('orders.read')
   findAll() {
     return this.ordersService.findAll();
   }
 
   @Get(':id')
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('buyer', 'seller', 'admin')
+  @Permissions('orders.read')
   findOne(
     @Param('id') id: string,
     @CurrentUser('id') userId: string,
@@ -68,7 +72,9 @@ export class OrdersController {
   }
 
   @Get(':id/history')
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('buyer', 'seller', 'admin')
+  @Permissions('orders.read')
   findHistory(
     @Param('id') id: string,
     @CurrentUser('id') userId: string,
@@ -91,6 +97,7 @@ export class OrdersController {
   @Patch(':id/status')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('seller', 'admin')
+  @Permissions('orders.manage')
   updateStatus(
     @Param('id') id: string,
     @Body() dto: UpdateOrderStatusDto,

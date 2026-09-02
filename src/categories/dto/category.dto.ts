@@ -1,4 +1,4 @@
-import { StoreMode } from '@prisma/client';
+import { CategoryFilterType, StoreMode } from '@prisma/client';
 import { IsBoolean, IsEnum, IsOptional, IsString } from 'class-validator';
 
 export class CreateCategoryDto {
@@ -15,6 +15,10 @@ export class CreateCategoryDto {
   @IsOptional()
   @IsEnum(StoreMode)
   mode?: StoreMode;
+
+  @IsOptional()
+  @IsEnum(CategoryFilterType)
+  filterType?: CategoryFilterType;
 }
 
 export class UpdateCategoryDto {
@@ -33,6 +37,10 @@ export class UpdateCategoryDto {
   @IsOptional()
   @IsEnum(StoreMode)
   mode?: StoreMode;
+
+  @IsOptional()
+  @IsEnum(CategoryFilterType)
+  filterType?: CategoryFilterType;
 
   @IsOptional()
   @IsBoolean()

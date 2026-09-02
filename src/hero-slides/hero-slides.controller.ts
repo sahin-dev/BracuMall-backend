@@ -13,6 +13,7 @@ import { CreateHeroSlideDto, UpdateHeroSlideDto } from './dto/hero-slide.dto';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
+import { Permissions } from '../common/decorators/permissions.decorator';
 
 @Controller('hero-slides')
 export class HeroSlidesController {
@@ -26,6 +27,7 @@ export class HeroSlidesController {
   @Get('admin')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('admin')
+  @Permissions('content.read')
   findAllAdmin() {
     return this.service.findAllAdmin();
   }
@@ -33,6 +35,7 @@ export class HeroSlidesController {
   @Post()
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('admin')
+  @Permissions('content.manage')
   create(@Body() dto: CreateHeroSlideDto) {
     return this.service.create(dto);
   }
@@ -40,6 +43,7 @@ export class HeroSlidesController {
   @Patch(':id')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('admin')
+  @Permissions('content.manage')
   update(@Param('id') id: string, @Body() dto: UpdateHeroSlideDto) {
     return this.service.update(id, dto);
   }
@@ -47,6 +51,7 @@ export class HeroSlidesController {
   @Delete(':id')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('admin')
+  @Permissions('content.manage')
   remove(@Param('id') id: string) {
     return this.service.remove(id);
   }

@@ -19,6 +19,7 @@ export class PlatformSettingsService {
       data: {
         siteName: dto.siteName?.trim(),
         logoUrl: dto.logoUrl,
+        defaultPostpaidDepositPercent: dto.defaultPostpaidDepositPercent,
       },
     });
   }

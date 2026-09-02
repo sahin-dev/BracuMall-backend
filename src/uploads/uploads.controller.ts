@@ -151,12 +151,21 @@ export class UploadsController {
     @Param('id') id: string,
     @CurrentUser('id') userId: string,
     @CurrentUser('role') role: string,
+    @CurrentUser('permissions') permissions: string[] | undefined,
     @Res() response: Response,
   ) {
     const upload = await this.prisma.privateUpload.findUniqueOrThrow({
       where: { id },
     });
-    let allowed = role === 'admin' || upload.ownerId === userId;
+    const adminPermissions = Array.isArray(permissions) ? permissions : [];
+    const hasAdminPermission = (permission: string) =>
+      adminPermissions.includes('*') || adminPermissions.includes(permission);
+    const adminCanRead =
+      role === 'admin' &&
+      (upload.purpose === 'seller_document'
+        ? hasAdminPermission('seller_applications.read')
+        : hasAdminPermission('finance.read') || hasAdminPermission('orders.read'));
+    let allowed = adminCanRead || upload.ownerId === userId;
     if (!allowed && upload.purpose === 'payment_proof') {
       const url = `/api/uploads/private/${upload.id}`;
       const submission = await this.prisma.paymentSubmission.findFirst({

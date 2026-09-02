@@ -198,11 +198,13 @@ export class SellerApplicationsService {
       }
 
       if (dto.status === 'approved') {
+        const sellerRole = await tx.accessRole.findUnique({ where: { slug: 'seller' } });
         const user = await tx.user.update({
           where: { id: application.userId },
           data: {
             isApproved: true,
             role: 'seller',
+            accessRoleId: sellerRole?.id,
             phone: application.phoneNumber,
             whatsappNumber: application.whatsappNumber,
             studentId: application.studentId,

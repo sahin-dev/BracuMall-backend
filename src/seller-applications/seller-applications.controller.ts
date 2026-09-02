@@ -16,6 +16,7 @@ import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
+import { Permissions } from '../common/decorators/permissions.decorator';
 
 @Controller('seller-applications')
 export class SellerApplicationsController {
@@ -33,6 +34,7 @@ export class SellerApplicationsController {
   @Get()
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('admin')
+  @Permissions('seller_applications.read')
   findAll(@Query('status') status?: string) {
     return this.applicationsService.findAll(status);
   }
@@ -47,6 +49,7 @@ export class SellerApplicationsController {
   @Get(':id')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('admin')
+  @Permissions('seller_applications.read')
   findOne(@Param('id') id: string) {
     return this.applicationsService.findById(id);
   }
@@ -54,6 +57,7 @@ export class SellerApplicationsController {
   @Patch(':id/review')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('admin')
+  @Permissions('seller_applications.review')
   review(
     @Param('id') id: string,
     @Body() dto: ReviewApplicationDto,
@@ -65,6 +69,7 @@ export class SellerApplicationsController {
   @Patch(':id/request-info')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('admin')
+  @Permissions('seller_applications.review')
   requestInfo(
     @Param('id') id: string,
     @Body() dto: RequestInfoDto,

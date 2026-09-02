@@ -187,7 +187,7 @@ export class ReviewsService {
   }
 
   async findForOwner(ownerId: string) {
-    const store = await this.prisma.store.findUniqueOrThrow({
+    const store = await this.prisma.store.findFirstOrThrow({
       where: { ownerId },
     });
     const reviews = await this.prisma.review.findMany({

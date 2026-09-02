@@ -1,14 +1,25 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
-import { ProductType, StoreMode } from '@prisma/client';
+import { CategoryFilterType, ProductType, StoreMode } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateCategoryDto, UpdateCategoryDto } from './dto/category.dto';
+import { resolveCategoryFilterType } from '../common/utils/category-filter.util';
 
 @Injectable()
 export class CategoriesService {
   constructor(private prisma: PrismaService) {}
 
   create(dto: CreateCategoryDto) {
-    return this.prisma.category.create({ data: dto });
+    return this.prisma.category.create({
+      data: {
+        ...dto,
+        filterType: resolveCategoryFilterType({
+          name: dto.name,
+          slug: dto.slug,
+          mode: dto.mode || StoreMode.general,
+          filterType: dto.filterType,
+        }),
+      },
+    });
   }
 
   async findAll(query: any = {}) {
@@ -17,7 +28,10 @@ export class CategoriesService {
       orderBy: { name: 'asc' },
     });
     if (query.withCounts !== 'true' || categories.length === 0)
-      return categories;
+      return categories.map((category) => ({
+        ...category,
+        filterType: resolveCategoryFilterType(category),
+      }));
 
     const counts = await this.prisma.product.groupBy({
       by: ['categoryId'],
@@ -32,12 +46,19 @@ export class CategoriesService {
     );
     return categories.map((category) => ({
       ...category,
+      filterType: resolveCategoryFilterType(category),
       productCount: countByCategory.get(category.id) || 0,
     }));
   }
 
-  findAllAdmin() {
-    return this.prisma.category.findMany({ orderBy: { name: 'asc' } });
+  async findAllAdmin() {
+    const categories = await this.prisma.category.findMany({
+      orderBy: { name: 'asc' },
+    });
+    return categories.map((category) => ({
+      ...category,
+      filterType: resolveCategoryFilterType(category),
+    }));
   }
 
   async update(id: string, dto: UpdateCategoryDto) {
@@ -45,7 +66,26 @@ export class CategoriesService {
       where: { id },
     });
     return this.prisma.$transaction(async (tx) => {
-      const category = await tx.category.update({ where: { id }, data: dto });
+      const nextMode = dto.mode || existing.mode;
+      const nextName = dto.name || existing.name;
+      const nextSlug = dto.slug || existing.slug;
+      const requestedFilterType =
+        dto.filterType ??
+        (dto.mode === StoreMode.food
+          ? CategoryFilterType.food
+          : existing.filterType);
+      const category = await tx.category.update({
+        where: { id },
+        data: {
+          ...dto,
+          filterType: resolveCategoryFilterType({
+            name: nextName,
+            slug: nextSlug,
+            mode: nextMode,
+            filterType: requestedFilterType,
+          }),
+        },
+      });
       const storeData: { categoryName?: string; mode?: StoreMode } = {};
       if (dto.name && dto.name !== existing.name)
         storeData.categoryName = dto.name;

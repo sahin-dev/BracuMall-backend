@@ -25,6 +25,13 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
   private readonly logger = new Logger(EventsGateway.name);
 
+  // Live "who's on the site" presence. Keyed by socket id -> the visitor id
+  // the client sends in its handshake, so multiple tabs from the same
+  // browser count once. Anonymous browsers are tracked here too (they just
+  // never join a `user:*` room) — this map is intentionally separate from
+  // authentication so a guest still shows up in the online count.
+  private readonly presence = new Map<string, string>();
+
   constructor(
     private jwtService: JwtService,
     private config: ConfigService,
@@ -45,11 +52,27 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
       client.data.userId = user.id;
       client.join(`user:${user.id}`);
     } catch {
-      client.disconnect();
+      // No/invalid session — still allow the connection through for presence
+      // tracking (a logged-out visitor is still "on the site"), just without
+      // a user room to receive private notifications in.
     }
+    const visitorId = (client.handshake.auth?.visitorId as string) || client.id;
+    this.presence.set(client.id, visitorId);
+    this.broadcastOnlineCount();
   }
 
-  handleDisconnect(_client: Socket) {}
+  handleDisconnect(client: Socket) {
+    this.presence.delete(client.id);
+    this.broadcastOnlineCount();
+  }
+
+  getOnlineCount() {
+    return new Set(this.presence.values()).size;
+  }
+
+  private broadcastOnlineCount() {
+    this.server?.emit('presence:count', this.getOnlineCount());
+  }
 
   emitToUser(userId: string, event: string, payload: any) {
     this.server?.to(`user:${userId}`).emit(event, payload);

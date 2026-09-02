@@ -23,6 +23,22 @@ async function seedAdmin() {
   }
 
   const passwordHash = await bcrypt.hash(password, 12);
+  const administratorRole = await prisma.accessRole.upsert({
+    where: { slug: 'administrator' },
+    create: {
+      name: 'Administrator',
+      slug: 'administrator',
+      description: 'Full platform administration access.',
+      accountType: UserRole.admin,
+      permissions: ['*'],
+      isSystem: true,
+    },
+    update: {
+      accountType: UserRole.admin,
+      permissions: ['*'],
+      isSystem: true,
+    },
+  });
   const admin = await prisma.user.upsert({
     where: { email },
     create: {
@@ -30,6 +46,7 @@ async function seedAdmin() {
       name,
       password: passwordHash,
       role: UserRole.admin,
+      accessRoleId: administratorRole.id,
       isApproved: true,
       isEmailVerified: true,
       emailVerifiedAt: new Date(),
@@ -38,6 +55,7 @@ async function seedAdmin() {
       name,
       password: passwordHash,
       role: UserRole.admin,
+      accessRoleId: administratorRole.id,
       isApproved: true,
       isEmailVerified: true,
       emailVerifiedAt: existing?.emailVerifiedAt || new Date(),

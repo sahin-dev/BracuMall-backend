@@ -12,7 +12,7 @@ export class MenusService {
   constructor(private prisma: PrismaService) {}
 
   private async getOwnStore(ownerId: string) {
-    const store = await this.prisma.store.findUnique({ where: { ownerId } });
+    const store = await this.prisma.store.findFirst({ where: { ownerId } });
     if (!store) throw new NotFoundException('You do not have a store yet');
     return store;
   }

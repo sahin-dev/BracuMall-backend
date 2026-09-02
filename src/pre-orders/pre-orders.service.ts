@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { PlatformSettingsService } from '../platform-settings/platform-settings.service';
 import { assertOwnership } from '../common/utils/ownership.util';
 import { MAX_LIST_SIZE } from '../common/utils/pagination.util';
 
@@ -25,6 +26,7 @@ export class PreOrdersService {
   constructor(
     private prisma: PrismaService,
     private notifications: NotificationsService,
+    private platformSettings: PlatformSettingsService,
   ) {}
 
   async create(
@@ -47,13 +49,18 @@ export class PreOrdersService {
       throw new BadRequestException('Pre-order deadline has passed');
     }
     const paymentType = product.preOrderPaymentType || 'postpaid';
-    const depositAmount =
-      paymentType === 'prepaid'
-        ? Number(product.preOrderDepositAmount || 0) * dto.quantity
-        : null;
-    if (paymentType === 'prepaid' && !depositAmount) {
-      throw new BadRequestException(
-        'This prepaid pre-order product does not have a deposit amount set',
+    let depositAmount: number | null = null;
+    if (paymentType === 'prepaid') {
+      depositAmount = Number(product.preOrderDepositAmount || 0) * dto.quantity;
+      if (!depositAmount) {
+        throw new BadRequestException(
+          'This prepaid pre-order product does not have a deposit amount set',
+        );
+      }
+    } else {
+      const percent = await this.resolvePostpaidDepositPercent(product);
+      depositAmount = Number(
+        ((product.price * dto.quantity * percent) / 100).toFixed(2),
       );
     }
     if (product.preOrderLimit) {
@@ -94,6 +101,23 @@ export class PreOrdersService {
       link: '/seller/pre-orders',
     });
     return preOrder;
+  }
+
+  private async resolvePostpaidDepositPercent(product: {
+    storeId: string;
+    preOrderPostpaidDepositPercent?: number | null;
+  }) {
+    if (product.preOrderPostpaidDepositPercent != null) {
+      return product.preOrderPostpaidDepositPercent;
+    }
+    const store = await this.prisma.store.findUnique({
+      where: { id: product.storeId },
+    });
+    if (store?.postpaidDepositPercent != null) {
+      return store.postpaidDepositPercent;
+    }
+    const settings = await this.platformSettings.getSettings();
+    return settings.defaultPostpaidDepositPercent;
   }
 
   async findById(id: string, userId: string, role: string) {

@@ -41,6 +41,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       throw new UnauthorizedException('Invalid access token');
     const user = await this.prisma.user.findUnique({
       where: { id: payload.sub },
+      include: { accessRole: true },
     });
     if (!user) return null;
     if (user.isSuspended) throw new UnauthorizedException('Account suspended');
@@ -58,6 +59,10 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       name: user.name,
       isApproved: user.isApproved,
       isEmailVerified: Boolean(user.isEmailVerified),
+      accessRole: user.accessRole
+        ? { id: user.accessRole.id, name: user.accessRole.name, accountType: user.accessRole.accountType }
+        : null,
+      permissions: user.accessRole?.permissions ?? (user.role === 'admin' ? ['*'] : []),
     };
   }
 }

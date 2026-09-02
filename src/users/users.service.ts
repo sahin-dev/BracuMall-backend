@@ -32,12 +32,16 @@ export class UsersService implements OnModuleInit {
         return;
       }
       const hash = await bcrypt.hash(password, 12);
+      const administratorRole = await this.prisma.accessRole.findUnique({
+        where: { slug: 'administrator' },
+      });
       await this.prisma.user.create({
         data: {
           email: email.trim().toLowerCase(),
           name: 'Admin',
           password: hash,
           role: 'admin',
+          accessRoleId: administratorRole?.id,
           isApproved: true,
           isEmailVerified: true,
           emailVerifiedAt: new Date(),
@@ -67,11 +71,12 @@ export class UsersService implements OnModuleInit {
     const users = await this.prisma.user.findMany({
       orderBy: { createdAt: 'desc' },
       take: MAX_LIST_SIZE,
+      include: { accessRole: true },
     });
     return users.map((user) => this.withoutSecrets(user));
   }
   async findById(id: string) {
-    const user = await this.prisma.user.findUnique({ where: { id } });
+    const user = await this.prisma.user.findUnique({ where: { id }, include: { accessRole: true } });
     return user ? this.withoutSecrets(user) : null;
   }
   findByEmail(email: string) {
@@ -121,6 +126,10 @@ export class UsersService implements OnModuleInit {
       emailOtpAttempts: _emailOtpAttempts,
       failedLoginAttempts: _failedLoginAttempts,
       lockedUntil: _lockedUntil,
+      passwordResetOtpHash: _passwordResetOtpHash,
+      passwordResetOtpExpiresAt: _passwordResetOtpExpiresAt,
+      passwordResetOtpSentAt: _passwordResetOtpSentAt,
+      passwordResetOtpAttempts: _passwordResetOtpAttempts,
       ...safeUser
     } = user;
     return safeUser;

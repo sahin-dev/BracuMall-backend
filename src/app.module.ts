@@ -35,6 +35,8 @@ import { HeroSlidesModule } from './hero-slides/hero-slides.module';
 import { PlatformSettingsModule } from './platform-settings/platform-settings.module';
 import { ApiThrottlerGuard } from './common/guards/api-throttler.guard';
 import { positiveInteger } from './common/rate-limit/rate-limit.util';
+import { AccessControlModule } from './access-control/access-control.module';
+import { AnalyticsModule } from './analytics/analytics.module';
 
 @Module({
   imports: [
@@ -58,6 +60,7 @@ import { positiveInteger } from './common/rate-limit/rate-limit.util';
       }),
     }),
     PrismaModule,
+    AccessControlModule,
     JwtModule.registerAsync({
       global: true,
       imports: [ConfigModule],
@@ -94,6 +97,7 @@ import { positiveInteger } from './common/rate-limit/rate-limit.util';
     CouponsModule,
     HeroSlidesModule,
     PlatformSettingsModule,
+    AnalyticsModule,
   ],
   controllers: [AppController],
   providers: [{ provide: APP_GUARD, useClass: ApiThrottlerGuard }],

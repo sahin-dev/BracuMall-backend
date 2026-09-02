@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { ProductType, StoreMode, type Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { assertOwnership } from '../common/utils/ownership.util';
@@ -33,10 +33,12 @@ export class StoresService {
       categoryId: string;
       categoryName: string;
       mode: StoreMode;
+      isAdminManaged?: boolean;
+      createdByAdminId?: string;
     },
     db: PrismaService | Prisma.TransactionClient = this.prisma,
   ) {
-    const existing = await db.store.findUnique({ where: { ownerId } });
+    const existing = await db.store.findFirst({ where: { ownerId } });
     if (existing) return existing;
     const slug = await this.generateSlug(name, db);
     return db.store.create({
@@ -47,7 +49,88 @@ export class StoresService {
         categoryId: category.categoryId,
         categoryName: category.categoryName,
         mode: category.mode,
+        isAdminManaged: category.isAdminManaged ?? false,
+        createdByAdminId: category.createdByAdminId,
       },
+    });
+  }
+
+  async createAdminStore(
+    adminId: string,
+    dto: {
+      name: string;
+      categoryId: string;
+      description?: string;
+      logoUrl?: string;
+      bannerUrl?: string;
+      location?: string;
+      postpaidDepositPercent?: number;
+    },
+  ) {
+    const category = await this.prisma.category.findUniqueOrThrow({
+      where: { id: dto.categoryId },
+    });
+    const slug = await this.generateSlug(dto.name);
+    return this.prisma.store.create({
+      data: {
+        ownerId: adminId,
+        name: dto.name.trim(),
+        slug,
+        description: dto.description?.trim(),
+        logoUrl: dto.logoUrl,
+        bannerUrl: dto.bannerUrl,
+        location: dto.location?.trim(),
+        categoryId: category.id,
+        categoryName: category.name,
+        mode: category.mode,
+        postpaidDepositPercent: dto.postpaidDepositPercent,
+        isAdminManaged: true,
+        createdByAdminId: adminId,
+      },
+    });
+  }
+
+  findAdminManagedStores() {
+    return this.prisma.store.findMany({
+      where: { isAdminManaged: true },
+      orderBy: { createdAt: 'desc' },
+      take: MAX_LIST_SIZE,
+    });
+  }
+
+  async getAdminManagedStoreOrThrow(id: string) {
+    const store = await this.prisma.store.findUnique({ where: { id } });
+    if (!store) throw new NotFoundException('Store not found');
+    if (!store.isAdminManaged) {
+      throw new BadRequestException('This store is not an admin-managed store');
+    }
+    return store;
+  }
+
+  async updateAdminStore(
+    id: string,
+    dto: { categoryId?: string; postpaidDepositPercent?: number } & Record<string, unknown>,
+  ) {
+    const store = await this.getAdminManagedStoreOrThrow(id);
+    const { categoryId, postpaidDepositPercent, ...profileFields } = dto;
+    if (categoryId && categoryId !== store.categoryId) {
+      await this.updateCategoryAdmin(id, categoryId);
+    }
+    return this.prisma.store.update({
+      where: { id },
+      data: {
+        ...profileFields,
+        ...(postpaidDepositPercent !== undefined ? { postpaidDepositPercent } : {}),
+      },
+    });
+  }
+
+  async setAdminManaged(id: string, isAdminManaged: boolean) {
+    await this.prisma.store.findUniqueOrThrow({ where: { id } });
+    return this.prisma.$transaction(async (tx) => {
+      const updated = await tx.store.update({ where: { id }, data: { isAdminManaged } });
+      await tx.product.updateMany({ where: { storeId: id }, data: { isAdminManaged } });
+      return updated;
     });
   }
 
@@ -58,6 +141,8 @@ export class StoresService {
         [field]: { contains: query.search, mode: 'insensitive' },
       }));
     }
+    if (query.categoryId) where.categoryId = query.categoryId;
+    if (query.mode) where.mode = query.mode;
     const allowedSortFields = new Set([
       'createdAt',
       'name',
@@ -78,7 +163,10 @@ export class StoresService {
     const [items, total] = await Promise.all([
       this.prisma.store.findMany({
         where,
-        orderBy: { [sortField]: requestedDirection === 'asc' ? 'asc' : 'desc' },
+        orderBy: [
+          { isAdminManaged: 'desc' },
+          { [sortField]: requestedDirection === 'asc' ? 'asc' : 'desc' },
+        ],
         take,
         skip,
       }),
@@ -125,7 +213,7 @@ export class StoresService {
   }
 
   findByOwner(ownerId: string) {
-    return this.prisma.store.findUniqueOrThrow({ where: { ownerId } });
+    return this.prisma.store.findFirstOrThrow({ where: { ownerId } });
   }
 
   async updateByOwner(
@@ -148,7 +236,7 @@ export class StoresService {
       brandColor?: string;
     },
   ) {
-    const store = await this.prisma.store.findUnique({ where: { ownerId } });
+    const store = await this.prisma.store.findFirst({ where: { ownerId } });
     if (!store) throw new NotFoundException('Store not found');
     return this.prisma.store.update({ where: { id: store.id }, data: dto });
   }

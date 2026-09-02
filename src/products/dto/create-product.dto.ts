@@ -12,7 +12,14 @@ import {
   ArrayUnique,
   Max,
   Min,
+  IsEnum,
 } from 'class-validator';
+import {
+  ClothingAudience,
+  ClothingType,
+  FoodMealType,
+  SpiceLevel,
+} from '@prisma/client';
 
 export class CreateProductDto {
   @IsString()
@@ -47,6 +54,46 @@ export class CreateProductDto {
   condition?: 'new' | 'like_new' | 'good' | 'fair';
 
   @IsOptional()
+  @IsEnum(FoodMealType)
+  mealType?: FoodMealType;
+
+  @IsOptional()
+  @IsString()
+  cuisine?: string;
+
+  @IsOptional()
+  @IsEnum(SpiceLevel)
+  spiceLevel?: SpiceLevel;
+
+  @IsOptional()
+  @IsEnum(ClothingType)
+  clothingType?: ClothingType;
+
+  @IsOptional()
+  @IsEnum(ClothingAudience)
+  clothingAudience?: ClothingAudience;
+
+  @IsOptional()
+  @IsArray()
+  @ArrayUnique()
+  @IsString({ each: true })
+  sizes?: string[];
+
+  @IsOptional()
+  @IsArray()
+  @ArrayUnique()
+  @IsString({ each: true })
+  colors?: string[];
+
+  @IsOptional()
+  @IsString()
+  brand?: string;
+
+  @IsOptional()
+  @IsString()
+  material?: string;
+
+  @IsOptional()
   @IsBoolean()
   isNegotiable?: boolean;
 
@@ -75,6 +122,12 @@ export class CreateProductDto {
   @IsNumber()
   @Min(0)
   preOrderDepositAmount?: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  @Max(100)
+  preOrderPostpaidDepositPercent?: number;
 
   @IsOptional()
   @IsInt()
