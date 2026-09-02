@@ -10,8 +10,15 @@ function baseCookieOptions() {
   const isProduction = process.env.NODE_ENV === 'production';
   return {
     httpOnly: true,
+    // The frontend (Vercel) and backend (a separate host) live on different
+    // domains in production — genuinely cross-site, not just cross-port like
+    // local dev. A SameSite=Lax cookie is withheld by the browser on every
+    // cross-site XHR/fetch, so the session would appear to work on login and
+    // then vanish on the very next API call. SameSite=None requires Secure,
+    // which requires HTTPS — true in production, and not forced locally
+    // where dev typically runs over plain http.
     secure: isProduction,
-    sameSite: 'lax' as const,
+    sameSite: (isProduction ? 'none' : 'lax') as 'none' | 'lax',
     path: '/',
   };
 }

@@ -73,6 +73,10 @@ export class AuthService {
         emailOtpSentAt: new Date(),
         emailOtpAttempts: 0,
       },
+
+
+
+      
     });
     await this.sendEmailOtp(user.email, otp);
     return this.verificationRequiredResponse(user.email);
