@@ -11,11 +11,19 @@ import { Server, Socket } from 'socket.io';
 import { parse as parseCookies } from 'cookie';
 import { PrismaService } from '../prisma/prisma.service';
 import { ACCESS_TOKEN_COOKIE } from '../common/utils/auth-cookies.util';
+import { getCorsOrigins } from '../common/utils/cors-origins.util';
 
 @Injectable()
 @WebSocketGateway({
   cors: {
-    origin: ['http://localhost:3000', 'http://localhost:3001', 'http://127.0.0.1:3000'],
+    // A function (not a static array) so this is evaluated per-connection —
+    // CORS_ORIGINS is read fresh from process.env each time, same allow-list
+    // main.ts uses for the REST API, instead of a second hardcoded list that
+    // silently drifts out of sync with it (e.g. in production).
+    origin: (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) => {
+      if (!origin || getCorsOrigins().includes(origin)) callback(null, true);
+      else callback(new Error('Not allowed by CORS'));
+    },
     credentials: true,
   },
 })

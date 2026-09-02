@@ -10,6 +10,7 @@ import { AppModule } from './app.module';
 import { ConfigService } from '@nestjs/config';
 import { parseTrustProxySetting } from './common/rate-limit/rate-limit.util';
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
+import { getCorsOrigins } from './common/utils/cors-origins.util';
 
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
@@ -35,15 +36,8 @@ async function bootstrap() {
   app.setGlobalPrefix('api');
   app.useGlobalFilters(new AllExceptionsFilter());
 
-  const configuredOrigins = configService
-    .get<string>('CORS_ORIGINS')
-    ?.split(',')
-    .map((origin) => origin.trim())
-    .filter(Boolean);
   app.enableCors({
-    origin: configuredOrigins?.length
-      ? configuredOrigins
-      : ['http://localhost:3000', 'http://127.0.0.1:3000'],
+    origin: getCorsOrigins(),
     credentials: true,
   });
 
