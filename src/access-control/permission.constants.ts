@@ -24,6 +24,8 @@ export const PERMISSION_CATALOG = [
   { key: 'finance.manage', group: 'Finance', label: 'Manage finance', description: 'Manage payment methods and verify donation payments.' },
   { key: 'complaints.read', group: 'Trust and safety', label: 'View complaints', description: 'View marketplace complaints and evidence.' },
   { key: 'complaints.manage', group: 'Trust and safety', label: 'Resolve complaints', description: 'Change complaint status and record resolutions.' },
+  { key: 'feedback.read', group: 'Support', label: 'View feedback', description: 'View feedback and attachments submitted through the support center.' },
+  { key: 'feedback.manage', group: 'Support', label: 'Manage feedback', description: 'Triage feedback, update its status, and save internal notes.' },
   { key: 'orders.read', group: 'Orders', label: 'View all orders', description: 'View all orders and pre-orders across the platform.' },
   { key: 'orders.manage', group: 'Orders', label: 'Manage all orders', description: 'Perform administrator actions on orders and pre-orders.' },
   { key: 'settings.read', group: 'Settings', label: 'View settings', description: 'View platform configuration.' },

@@ -37,6 +37,7 @@ import { ApiThrottlerGuard } from './common/guards/api-throttler.guard';
 import { positiveInteger } from './common/rate-limit/rate-limit.util';
 import { AccessControlModule } from './access-control/access-control.module';
 import { AnalyticsModule } from './analytics/analytics.module';
+import { FeedbackModule } from './feedback/feedback.module';
 
 @Module({
   imports: [
@@ -76,6 +77,7 @@ import { AnalyticsModule } from './analytics/analytics.module';
     NotificationsModule,
     MessagingModule,
     ComplaintsModule,
+    FeedbackModule,
     UploadsModule,
     StoresModule,
     SellerApplicationsModule,

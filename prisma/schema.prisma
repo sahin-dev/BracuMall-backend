@@ -101,6 +101,13 @@ enum PrivateUploadPurpose {
   payment_proof
 }
 
+enum FeedbackStatus {
+  new
+  in_review
+  resolved
+  archived
+}
+
 model User {
   id                        String              @id @default(auto()) @map("_id") @db.ObjectId
   email                     String              @unique
@@ -729,6 +736,27 @@ model Complaint {
   @@index([filedById])
   @@index([againstUserId])
   @@index([status])
+}
+
+model Feedback {
+  id                        String         @id @default(auto()) @map("_id") @db.ObjectId
+  email                     String?
+  subject                   String
+  description               String
+  status                    FeedbackStatus @default(new)
+  isRead                    Boolean        @default(false)
+  attachmentStorageKey      String?
+  attachmentOriginalName    String?
+  attachmentMimeType        String?
+  attachmentSize            Int?
+  acknowledgementSentAt     DateTime?
+  adminNote                 String?
+  createdAt                 DateTime       @default(now())
+  updatedAt                 DateTime       @updatedAt
+
+  @@index([status])
+  @@index([isRead])
+  @@index([createdAt])
 }
 
 model PrivateUpload {

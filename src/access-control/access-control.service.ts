@@ -137,6 +137,7 @@ export class AccessControlService implements OnModuleInit {
       'delivery_locations.manage': 'delivery_locations.read',
       'finance.manage': 'finance.read',
       'complaints.manage': 'complaints.read',
+      'feedback.manage': 'feedback.read',
       'orders.manage': 'orders.read',
       'settings.manage': 'settings.read',
     };
